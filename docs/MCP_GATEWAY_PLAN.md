@@ -149,17 +149,27 @@ Shared Infra: DynamoDB / S3 / Secrets Manager / SSM / Cognito / CloudWatch
 5. ヘルスチェック (`/healthz`, `/healthz/upstreams`)
 6. CloudWatch ダッシュボード
 
-完了基準: 上流別 RPS とエラー率がダッシュボードで確認可能。
+完了基準:
+- ダッシュボードに `RequestCount` / `Latency` (p50/p95/p99) / `UpstreamErrors` / `RateLimitHits` / `ActiveSessions` の 5 指標を表示
+- 全 JSON-RPC メソッドで監査ログ書き込み成功率 99.9%+（非同期キューのフォールバック CloudWatch Logs 含む）
+- メトリクスカバレッジ率 90%+（全公開 RPC エンドポイントが Metrics + Tracing 双方で計測）
+- 監査ログから特定ユーザーの過去 24h の `tools/call` 抽出が `AUDIT#mcp-gw#` GSI で 1 秒以内
+- `/healthz` 応答 < 50ms, `/healthz/upstreams` で各上流 status を JSON 返却
 
 ### Phase 6: 運用機能 (Medium / 1.5 週)
 
-1. トークンバケット型レート制限
-2. Circuit Breaker (Closed/Open/Half-Open)
+1. トークンバケット型レート制限 — **デフォルト 60 req/分/ユーザー、上流別上限はコンフィグで指定**
+2. Circuit Breaker (Closed/Open/Half-Open) — **エラー率閾値 50% (60 秒移動窓 / 最低 10 リクエスト)、Open 状態 30 秒、Half-Open で 3 リクエスト成功で Closed 復帰**
 3. PII フィルタ (Bedrock Guardrails 連携, Risk: High)
 4. Multi-AZ ECS Fargate デプロイ
-5. Graceful Shutdown
+5. Graceful Shutdown — **SIGTERM 受信後 30 秒以内に進行中 RPC 完了、新規接続停止**
 
-完了基準: 上流 1 個停止しても他は応答継続、Burst が 429 でブロック。
+完了基準:
+- 上流 1 個を意図的に停止して 5 分間負荷を流し、他の上流の成功率 99%+ を維持
+- Burst リクエスト（瞬間 200 req/分/ユーザー）で `-32004` レート制限エラーが p95 < 50ms で返却
+- Circuit Breaker が Open → Half-Open → Closed の状態遷移を実機ログで確認、復旧時間 < 60 秒
+- PII フィルタ誤検知率 < 5%（ベンチマーク 100 ケース）
+- Multi-AZ で 1 タスク強制終了しても ALB ターゲットグループから 30 秒以内に除外、Drained Connections ゼロ
 
 ### Phase 7: 設定管理 UI / 動的リロード (Medium / 1.5 週)
 
@@ -265,7 +275,7 @@ Shared Infra: DynamoDB / S3 / Secrets Manager / SSM / Cognito / CloudWatch
 | 8: テスト | Medium | 0.3 |
 | **合計** | - | **3.3** |
 
-`enterprise-ai-platform` 本体 10.0 人月 + 本サブシステム 3.3 人月 = **約 13.3 人月**、2〜3 名で 5〜6 ヶ月。
+`enterprise-ai-platform` 本体 10.25 人月 + 本サブシステム 3.3 人月 = **約 13.55 人月**、2〜3 名で 5〜6 ヶ月。
 
 ## 7. 技術スタック
 
@@ -294,9 +304,9 @@ Shared Infra: DynamoDB / S3 / Secrets Manager / SSM / Cognito / CloudWatch
 ### 7.5 既存統合
 
 - AWS インフラ完全統合
-- Phase 4 で Cognito、Phase 8 で Azure AD
-- Admin Console に 1 ページ追加
-- 監査基盤再利用、ECS は別タスク
+- 認証: MCP Gateway Phase 4 で Cognito JWT を採用（OpenClaw 本体 Phase 6 で構築済み User Pool を共有）。Azure AD SSO は OpenClaw 本体 Phase 8 完了に合わせて連携
+- Admin Console に 1 ページ追加（OpenClaw 本体 Phase 6 完了が前提）
+- 監査基盤再利用（`packages/audit-events/` 共有）、ECS は別タスク・DynamoDB は別テーブル
 
 ## 8. ディレクトリ構成案
 

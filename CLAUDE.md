@@ -23,7 +23,7 @@ MCP Gateway サブシステムの設計は `docs/MCP_GATEWAY_PLAN.md` に分離�
 
 これらの制約は意図的に選択されたものです。ユーザーの明示的な承認なしにスコープを拡大しないでください:
 
-- **最大 500 ユーザー**。アーキテクチャは 50（MVP）→ 500（最終）規模で設計されています。EKS 採用、マルチリージョン、5,000 ユーザー超のスケールは明示的にスコープ外です。
+- **最大 500 ユーザー、単一リージョン強制**。アーキテクチャは 50（MVP）→ 500（最終）規模で設計されています。EKS 採用、マルチリージョン、5,000 ユーザー超のスケール、EU / APAC のデータ主権要件（AgentCore 非対応リージョン内処理必須）は明示的にスコープ外。全データを AgentCore 対応リージョン（us-east-1 / us-west-2）に配置できる組織のみを対象とします。クロスリージョンの仕掛け（`region_override`, Global Table 等）は禁止です。
 - **IM プラットフォームは Slack のみ**。Teams / Telegram / Discord / Feishu / WhatsApp アダプタはスコープ外です。`services/im-adapter/` の構成には *将来の* 拡張に備えた薄い `core/` インタフェースを含みますが、実装するのは `slack/` のみです。
 - **OpenClaw へのゼロ侵襲**。エージェントの挙動はワークスペースファイル（SOUL.md, IDENTITY.md, SESSION_CONTEXT.md, TOOLS.md など）を `workspace_assembler` でアセンブルすることでのみ制御します。OpenClaw ソースをフォーク・パッチしないでください。OpenClaw のバージョンは Agent Container の Dockerfile で `2026.3.24` に固定 — アップグレード禁止です。
 - **`sample/` からのコードコピー禁止**。`sample/` シンボリックリンク（→ `../sample-OpenClaw-on-AWS-with-Bedrock`）は AWS Samples のリファレンス実装です。設計参考としてのみ使用し、独立して実装してください。
@@ -68,7 +68,9 @@ AI (Bedrock + Guardrails + Knowledge Bases)
 .
 ├── docs/
 │   ├── OPENCLAW_PLATFORM_PLAN.md  # OpenClaw 本体設計の Source of Truth（日本語）
-│   └── MCP_GATEWAY_PLAN.md        # MCP Gateway サブシステム設計（日本語）
+│   ├── MCP_GATEWAY_PLAN.md        # MCP Gateway サブシステム設計（日本語）
+│   └── adr/                       # Architecture Decision Records
+│       └── 0001-python-unified-backend.md
 ├── README.md                    # スタブ
 ├── CLAUDE.md                    # 本ファイル
 ├── .gitignore                   # sample/ と ecc/ シンボリックリンクを除外
@@ -80,6 +82,7 @@ AI (Bedrock + Guardrails + Knowledge Bases)
 
 ## プラン運用上の注意
 
-- MVP は Phase 1〜4 + Phase 6（最小実装）。後続フェーズは前フェーズの完了に依存します（依存関係マップは `docs/OPENCLAW_PLATFORM_PLAN.md` § 4、横断依存も同節を参照）。
+- MVP は Phase 1〜4 + Phase 6a（API 層の最小実装）。Phase 6b（UI）は M2 以降。後続フェーズは前フェーズの完了に依存します（依存関係マップは `docs/OPENCLAW_PLATFORM_PLAN.md` § 4、横断依存も同節を参照）。
+- 重要な設計判断は `docs/adr/` の Architecture Decision Records として記録します（例: ADR 0001 でバックエンドの Python 統一）。設計変更を提案する際は該当 ADR を更新するか、新規 ADR を起こしてください。
 - プランは意図的に 2 回スコープ縮小されています: (1) 5,000 → 500 ユーザー、(2) 5 IM プラットフォーム → Slack のみ。さらなるスコープ拡大要望は、ルーチンな進化ではなく、改めてユーザー確認が必要な事項として扱ってください。
 - ユーザーの母語は日本語です。設計ドキュメントの議論・コメント・コミットメッセージなどは日本語を優先してください。

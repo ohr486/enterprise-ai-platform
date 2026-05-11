@@ -8,8 +8,9 @@
 
 | ドキュメント | 概要 |
 |---|---|
-| [docs/OPENCLAW_PLATFORM_PLAN.md](docs/OPENCLAW_PLATFORM_PLAN.md) | OpenClaw プラットフォーム本体の実装プラン（10 フェーズ、約 10.0 人月） |
+| [docs/OPENCLAW_PLATFORM_PLAN.md](docs/OPENCLAW_PLATFORM_PLAN.md) | OpenClaw プラットフォーム本体の実装プラン（10 フェーズ、約 10.25 人月） |
 | [docs/MCP_GATEWAY_PLAN.md](docs/MCP_GATEWAY_PLAN.md) | MCP Gateway サブシステムの実装プラン（8 フェーズ、約 3.3 人月） |
+| [docs/adr/](docs/adr/) | Architecture Decision Records（設計判断の履歴） |
 | [CLAUDE.md](CLAUDE.md) | Claude Code 向けのリポジトリ作業ガイダンス |
 
 ## 提供価値
@@ -30,7 +31,7 @@ ChatGPT Team / Microsoft Copilot との違い:
 | Small (MVP) | 50 | 1〜3 | シングルランタイム、Portal チャットのみ |
 | Medium (最終目標) | 500 | 5〜10 | 4 ティアランタイム、Slack 連携、常時稼働一部、フルガバナンス |
 
-> EKS 採用、マルチリージョン、5,000 ユーザー超のスケールは本プロジェクトのスコープ外。
+> EKS 採用、マルチリージョン、5,000 ユーザー超のスケール、EU / APAC のデータ主権要件（AgentCore 非対応リージョン内処理必須）は本プロジェクトのスコープ外。全コンポーネントを AgentCore 対応リージョン（us-east-1 / us-west-2）に単一配置することが前提です。
 
 ## アーキテクチャ概要
 
@@ -43,7 +44,7 @@ Control Plane (FastAPI on ECS Fargate)
     ↓
 Gateway Plane (Tenant Router + Bedrock H2 Proxy + MCP Gateway)
     ↓
-Data Plane (Bedrock AgentCore microVM / ECS Fargate Always-On)
+Data Plane (Bedrock AgentCore microVM ← MVP / ECS Fargate Always-On ← Phase 5 以降)
     ↓
 State (DynamoDB シングルテーブル + S3 + SSM/Secrets)
     ↓
@@ -85,20 +86,20 @@ AI (Bedrock + Guardrails + Knowledge Bases)
 
 ## マイルストーン
 
-| マイルストーン | 提供価値 |
-|---|---|
-| **M1 MVP** | 50 ユーザー、Portal チャット、Standard ティアのみ |
-| **M2** | 200〜300 ユーザー、常時稼働、Slack 連携 |
-| **M3** | 500 ユーザー、フルガバナンス、デジタルツイン、Azure AD |
-| **M4** | 500 ユーザー、SOC2 準拠基盤、運用安定化 |
+| マイルストーン | 含むフェーズ | 提供価値 |
+|---|---|---|
+| **M1 MVP** | Phase 1〜4 + Phase 6（最小実装） | 50 ユーザー、Portal チャット、Standard ティアのみ |
+| **M2** | + Phase 5, 7 | 200〜300 ユーザー、常時稼働、Slack 連携 |
+| **M3** | + Phase 8, 9 | 500 ユーザー、フルガバナンス、デジタルツイン、Azure AD |
+| **M4** | + Phase 10 強化 | 500 ユーザー、SOC2 準拠基盤、運用安定化 |
 
 ## 工数見積もり
 
 | サブシステム | 人月 | 期間（2〜3 名） |
 |---|---|---|
-| OpenClaw 本体 | 10.0 | 4〜5 ヶ月 |
+| OpenClaw 本体 | 10.25 | 4〜5 ヶ月 |
 | MCP Gateway | 3.3 | 2〜3 ヶ月 |
-| **合計** | **13.3** | **5〜6 ヶ月** |
+| **合計** | **13.55** | **5〜6 ヶ月** |
 
 ## 想定コスト（500 ユーザー規模）
 

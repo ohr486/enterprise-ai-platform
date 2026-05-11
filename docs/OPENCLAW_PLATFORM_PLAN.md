@@ -46,7 +46,7 @@
 - デジタルツイン公開リンク・プレイグラウンド・IT 管理者アシスタント（Phase 9）
 - 負荷試験・一発デプロイ・ドキュメント整備（Phase 10）
 
-> **スコープ外:** EKS 対応、マルチリージョン、5,000ユーザー超のスケールは本プロジェクトの対象外。
+> **スコープ外:** EKS 対応、マルチリージョン、5,000ユーザー超のスケール、**EU / APAC のデータ主権要件があり AgentCore 非対応リージョン内処理が必須のテナント** は本プロジェクトの対象外。
 
 ### 1.4 成功基準
 
@@ -159,7 +159,9 @@
 
 各フェーズは独立してマージ可能・検証可能な単位で構成しています。
 
-### Phase 1: 基盤インフラ（複雑度: Medium / 工数: 2〜3週間）
+### Phase 1: 基盤インフラ + 監査一次系（複雑度: Medium / 工数: 4 週間 ≒ 1.0 人月）
+
+> **工数注**: 旧見積もり 0.75 人月では監査一次系（Firehose / Athena / Object Lock）の前倒し構築を吸収しきれないため 1.0 人月に増。9 ステップのうち Step 5（DynamoDB + 監査一次系）が最も重い。
 
 **目的：** AWS アカウントに、後続のフェーズが乗る土台を IaC で構築する。
 
@@ -416,7 +418,10 @@
    - Risk: Medium
 
 3. **Service Discovery (AWS Cloud Map) 登録**（File: `infra/terraform/modules/cloudmap/`, ECS タスク定義側）
-   - Action: ECS Service の `serviceRegistries` で AWS Cloud Map (`{empId}.always-on.internal`) に自動登録。Health Check に紐づき、停止時は自動で deregister
+   - Action:
+     - ECS Service の `serviceRegistries` で AWS Cloud Map (`{empId}.always-on.internal`) に自動登録
+     - **DNS TTL を 10 秒に設定**（既定 60 秒は完了基準「30 秒以内に登録」と整合しないため）
+     - Health Check に紐づき、停止時は自動で deregister
    - Why: **SSM Parameter Store はサービスディスカバリ用途ではない**。再起動・スケール時の古い IP 参照を防ぐにはマネージドの Service Discovery（Cloud Map）か ALB ターゲットグループが必須
    - Dependencies: Step 1
    - Risk: Low（マネージド）
@@ -658,6 +663,12 @@
    - Dependencies: なし
    - Risk: Low
 
+3a. **audit-events スキーマ互換性テスト**（File: `packages/audit-events/tests/test_schema_compat.py`）
+   - Action: 本体テーブルと MCP Gateway テーブルの両方に `AuditRepository(tableName)` で同一スキーマ書込みを確認、Pydantic スキーマの破壊的変更を CI で検出（過去 N バージョンとの後方互換性チェック）
+   - Why: 二系統書込みでスキーマがドリフトすると監査検索 / Athena クエリが壊れる
+   - Dependencies: Phase 1 監査一次系、Phase 5 MCP 監査
+   - Risk: Low
+
 4. **`deploy.sh` 一発デプロイ**（File: `scripts/deploy.sh`）
    - Action: `terraform apply` → コンテナビルド・push → AgentCore Runtime 登録 → シード → 起動確認
    - Why: 30 分以内デプロイ要件
@@ -697,8 +708,7 @@ Phase 1 (Infra) ───┬──→ Phase 2 (Gateway) ──┐
 
 ### AWS サービス依存
 - Bedrock AgentCore: us-east-1 / us-west-2 限定 → リージョン選定が全フェーズに影響
-- DynamoDB: us-east-2 でも可（クロスリージョン無料）
-- ECS Fargate / EFS: 同一リージョン必須
+- DynamoDB / S3 / ECS Fargate / EFS / Cognito / Cloud Map: **AgentCore と同一リージョンに強制配置**（§ 5.4 リージョン戦略を参照、クロスリージョン構成は禁止）
 
 ### 外部 API 依存
 | 機能 | 外部 API | フェーズ |
@@ -717,7 +727,7 @@ Phase 1 (Infra) ───┬──→ Phase 2 (Gateway) ──┐
 | リスク | 影響 | 緩和策 |
 |-------|------|--------|
 | **OpenClaw バージョン非互換** | IM 統合崩壊 | Dockerfile で `2026.3.24` 固定、CI で検証 |
-| **AgentCore リージョン制限** | Tokyo 等で使えない | DynamoDB は別リージョン分離可、ユーザーに明示 |
+| **AgentCore リージョン制限** | Tokyo 等で使えない | 単一リージョン強制（§ 5.4）。AgentCore 対応リージョンに全データ配置できる組織のみが対象であることを README/契約で明示。EU/APAC データ主権要件があるテナントはスコープ外 |
 | **Bedrock H2 Proxy のストリーミング** | レスポンス遅延 | FastAPI + `httpx[http2]` + `anyio`、p95 レイテンシ閾値 + バックプレッシャ試験を Phase 2 完了基準に必須化 |
 | **DynamoDB ホットパーティション** | 書き込み制限 | パーティションキーに `ORG#` を含めない設計、suffix 分散 |
 | **マルチテナント情報漏洩** | 重大インシデント | テナント ID 改ざんテストを CI 必須化 |
@@ -753,11 +763,11 @@ Phase 1 (Infra) ───┬──→ Phase 2 (Gateway) ──┐
 ### 法的・コンプライアンス
 
 - `sample/` のライセンス（AWS Samples / Apache 2.0 想定だが要確認） → コードはコピーせず参考のみ。本リポジトリのライセンスは MIT を予定
-- **リージョン戦略（重要）**:
-  - 全コンポーネント（VPC / DynamoDB / S3 / AgentCore / ECS / Cognito）を **単一リージョンに強制配置**する
+- **リージョン戦略（単一リージョン対応で完結）**:
+  - 全コンポーネント（VPC / DynamoDB / S3 / AgentCore / ECS / Cognito / Cloud Map）を **単一リージョンに強制配置**する。`region_override` などのクロスリージョン仕掛けは導入しない
   - AgentCore は us-east-1 / us-west-2 のいずれかを選択。クロスリージョン構成は禁止（Workspace Assembler の S3 / DynamoDB 高頻度アクセスが p95 < 15s 要件と衝突するため）
-  - **EU / APAC のデータ主権要件があるテナント** → 当該リージョンに AgentCore がない場合は、Phase 5 の **ECS Fargate Always-On モードへ強制ルーティング**（同リージョンに ECS は配置可能）して対応。Tenant Router のルーティング設定で `region_override` を実装する
-- データ越境 → 当該テナントの全データ（ワークスペース・監査・KB）が単一リージョンに留まることを Terraform で強制
+  - 本プロジェクトは「AgentCore 利用可能リージョンに全データを配置できる組織」を対象とする。**EU / APAC のデータ主権要件があり当該リージョン内処理が必須のテナントは本プロジェクトのスコープ外**（別プロジェクトでマルチリージョン展開を検討）
+- データ越境 → 当該テナントの全データ（ワークスペース・監査・KB）が単一リージョンに留まることを Terraform で強制（クロスリージョンレプリケーション・Global Table は禁止）
 
 ---
 
@@ -765,19 +775,22 @@ Phase 1 (Infra) ───┬──→ Phase 2 (Gateway) ──┐
 
 | Phase | 複雑度 | 工数（人月） | 並行可能 |
 |-------|--------|------------|----------|
-| 1: 基盤インフラ + 監査一次系 | Medium | 0.75 | - |
+| 1: 基盤インフラ + 監査一次系 | Medium | 1.0 | - |
 | 2: ゲートウェイ + テナント漏洩テスト | High | 1.0 | Phase 3 と並行可 |
 | 3: Agent Container | High | 1.5 | Phase 2 と並行可 |
 | 4: AgentCore 統合 | High | 0.5 | - |
 | 5: Always-On (Cloud Map) | Medium | 0.5 | Phase 6 と並行可 |
-| 6: 管理コンソール (6a API + 6b UI) | High | 3.0 | Phase 5 と並行可（6a 完了が他フェーズの結合条件） |
+| **6a**: 管理コンソール API（FastAPI + DynamoDB Repository + RBAC + Auto-Provisioning + SOUL Editor + 監査検索 + 使用量集計） | High | 1.5 | Phase 5 と並行可 |
+| **6b**: Admin Console + Portal フロントエンド（Next.js 15、13 ページ） | High | 1.5 | Phase 6a 完了後（6a で MCP Phase 4 結合解除） |
 | 7: IM チャネル (Slack のみ) | Medium | 0.5 | Phase 5/6 完了後 |
 | 8: ガバナンス | Medium | 0.75 | Phase 9 と並行可 |
 | 9: デジタルツイン | Medium | 0.5 | Phase 8 と並行可 |
 | 10: テスト・ドキュメント | Medium | 1.0（継続） | 全期間 |
-| **合計** | - | **約 10.0 人月** | 2〜3 名で 4〜5 ヶ月 |
+| **合計** | - | **約 10.25 人月** | 2〜3 名で 4〜5 ヶ月 |
 
-> 旧見積もり（7.0 人月）は Phase 3・6 が楽観的だったため改定。Phase 6 はクリティカルパスのため UI 経験者を 1 名は確保すること。
+> 旧見積もり（7.0 人月）は Phase 1・3・6 が楽観的だったため改定。Phase 6a はクリティカルパス（MCP Gateway Phase 4 着手の前提）のため最優先で進めること。Phase 6b は UI 経験者を 1 名以上確保すること。
+
+> **6a/6b 分割の効果**: Phase 6a 完了時点で全機能を curl / Postman で検証可能。MCP Gateway Phase 4 (Cognito JWT) を 6a 完了直後に着手できるため、並行効率が向上。
 
 ---
 
@@ -815,7 +828,10 @@ enterprise-ai-platform/
 │   ├── shared-types/                     # TypeScript 型定義
 │   ├── shared-python/                    # Python 共通ユーティリティ
 │   ├── soul-schema/                      # SOUL.md スキーマ + バリデータ
-│   └── audit-events/                     # 監査イベント型・列挙
+│   └── audit-events/                     # 監査イベント型・列挙 + AuditRepository(tableName) 抽象
+│                                         #   本体は `enterprise-ai-platform-{env}` テーブル、
+│                                         #   MCP Gateway は `enterprise-ai-platform-mcp-gw-{env}` テーブルへ書き込み（テーブル名注入）。
+│                                         #   PITR/TTL 設定差異は Terraform 側で管理
 │
 ├── infra/                                 # IaC
 │   ├── terraform/
@@ -879,6 +895,8 @@ enterprise-ai-platform/
 | IaC | HCL (Terraform) | 1.10+ | モジュール化容易 |
 
 > Bedrock H2 Proxy は当初 Node.js / Hono を検討したが、`httpx` + `h2` + `anyio` で Python でも同等の HTTP/2 ストリーミング性能が達成できるため、運用負債削減のため Python に統一。CI の静的解析（Ruff）も単一系統で済む。
+>
+> 決定の経緯と検討した代替案は [ADR 0001: バックエンドサービスを Python 3.12 に統一する](adr/0001-python-unified-backend.md) を参照。
 
 ### フレームワーク
 
@@ -941,7 +959,7 @@ enterprise-ai-platform/
 
 | マイルストーン | 含むフェーズ | 提供価値 |
 |--------------|-----------|---------|
-| **MVP (M1)** | Phase 1〜4 + Phase 6 の最小 | 50 ユーザー、Portal チャット、Standard ティアのみ |
+| **MVP (M1)** | Phase 1〜4 + Phase 6a（最小実装） | 50 ユーザー、Portal チャット、Standard ティアのみ。Phase 6a 完了で curl/Postman 検証可、Phase 6b（UI）は M2 で追加 |
 | **M2** | + Phase 5, 7（Slack） | 常時稼働、Slack 連携、200〜300 ユーザー |
 | **M3** | + Phase 8, 9 | フルガバナンス、デジタルツイン、Azure AD、500 ユーザー対応 |
 | **M4** | + Phase 10 強化 | 500 ユーザー、SOC2 準拠基盤、運用安定化 |
