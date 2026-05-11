@@ -39,7 +39,7 @@ Edge (CloudFront + WAF + API Gateway)
     ↓
 Control Plane (FastAPI on ECS Fargate — 組織 CRUD, SOUL エディタ, 監査, RBAC)
     ↓
-Gateway Plane (Tenant Router + Bedrock H2 Proxy — 3 ティアルーティング, SigV4)
+Gateway Plane (Tenant Router + Bedrock H2 Proxy + MCP Gateway — 3 ティアルーティング, SigV4)
     ↓
 Data Plane (Bedrock AgentCore microVM もしくは ECS Fargate Always-On)
     ↓
@@ -80,6 +80,6 @@ AI (Bedrock + Guardrails + Knowledge Bases)
 
 ## プラン運用上の注意
 
-- Phase 1〜3 が MVP。後続フェーズは前フェーズの完了に依存します（依存関係マップは `docs/OPENCLAW_PLATFORM_PLAN.md` § 4）。
+- MVP は Phase 1〜4 + Phase 6（最小実装）。後続フェーズは前フェーズの完了に依存します（依存関係マップは `docs/OPENCLAW_PLATFORM_PLAN.md` § 4、横断依存も同節を参照）。
 - プランは意図的に 2 回スコープ縮小されています: (1) 5,000 → 500 ユーザー、(2) 5 IM プラットフォーム → Slack のみ。さらなるスコープ拡大要望は、ルーチンな進化ではなく、改めてユーザー確認が必要な事項として扱ってください。
 - ユーザーの母語は日本語です。設計ドキュメントの議論・コメント・コミットメッセージなどは日本語を優先してください。

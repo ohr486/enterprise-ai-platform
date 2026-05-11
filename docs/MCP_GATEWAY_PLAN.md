@@ -103,17 +103,19 @@ Shared Infra: DynamoDB / S3 / Secrets Manager / SSM / Cognito / CloudWatch
 
 完了基準: Claude Desktop で `initialize` 成功、空の `tools/list` 応答。
 
+**Walking Skeleton マイルストーン**: Phase 1 完了時点で実 Claude Desktop / Claude Code に Gateway を登録し、`initialize` → `tools/list`（空配列）→ `ping` の往復が成立することを確認。プロトコル仕様準拠リスクを最早期に検出する。
+
 ### Phase 2: 上流接続層 (High / 2 週)
 
 1. `IUpstreamClient` 抽象
-2. Streamable HTTP クライアント
-3. HTTP+SSE クライアント (legacy)
-4. stdio サブプロセスクライアント (Risk: High)
+2. Streamable HTTP クライアント（MVP 必須）
+3. HTTP+SSE クライアント (legacy)（MVP 必須）
+4. stdio サブプロセスクライアント (Risk: High) — **MVP オプション、リモート上流のみで開始可**
 5. 接続プール
 6. 設定ローダー (Pydantic v2)
 7. 統合テスト (Mock 上流)
 
-完了基準: stdio 上流 + リモート Streamable HTTP 上流の両方で `list_tools()` 成功。
+完了基準: Streamable HTTP 上流で `list_tools()` 成功（MVP 必須）。stdio 上流は MVP では延期可能（プロセスリーク・cgroup OOM・ファイルディスクリプタ枯渇のリスクを考慮し、Phase 6 の Multi-AZ 完了後に再着手することも検討）。
 
 ### Phase 3: 名前空間化と集約 (Medium / 1.5 週)
 
@@ -191,12 +193,22 @@ Shared Infra: DynamoDB / S3 / Secrets Manager / SSM / Cognito / CloudWatch
 
 | 共有 | 方法 |
 |---|---|
-| VPC / IAM / DynamoDB / S3 / Secrets / Cognito | 同一 Terraform ステート、`PK="MCP#"` で名前空間分離 |
+| VPC / IAM / S3 / Secrets / Cognito | 同一 Terraform ステート |
+| **DynamoDB（テーブル分離）** | **MCP Gateway 用に専用テーブル `enterprise-ai-platform-mcp-gw-{env}` を作成**。本体側との I/O 競合・容量設定干渉・PITR コスト結合・DDL 変更影響を回避するため、`PK="MCP#"` 名前空間分離ではなくテーブル分離方式に変更 |
 | Admin Console | 既存 Next.js アプリに `app/mcp-gateway/` を追加 |
-| 監査イベント | `packages/audit-events/` 拡張 |
+| 監査イベント | `packages/audit-events/` 拡張（ただし MCP Gateway は独自テーブルに書き込み、S3 長期保管プレフィックスのみ共有） |
 | CI/CD | 同一 GitHub Actions / Turborepo |
 
-独立部分: ECS Fargate サービス、ALB ターゲットグループ。
+独立部分: ECS Fargate サービス、ALB ターゲットグループ、**DynamoDB テーブル**。
+
+**横断依存（OpenClaw 本体プランとの結合点）**:
+| MCP Gateway Phase | 依存する OpenClaw Phase |
+|---|---|
+| Phase 4（Cognito JWT） | OpenClaw Phase 6（Cognito User Pool） |
+| Phase 6（PII / Bedrock Guardrails） | OpenClaw Phase 8（Guardrails ティア定義） |
+| Phase 7（Admin Console 統合） | OpenClaw Phase 6（Admin Console 基盤） |
+
+並行 2 名体制では OpenClaw Phase 6 が両者のクリティカルパス。MCP Gateway 単独で Phase 7 へ進めない点に注意。
 
 ### 4.3 配置
 
@@ -253,7 +265,7 @@ Shared Infra: DynamoDB / S3 / Secrets Manager / SSM / Cognito / CloudWatch
 | 8: テスト | Medium | 0.3 |
 | **合計** | - | **3.3** |
 
-`enterprise-ai-platform` 本体 7.0 人月 + 本サブシステム 3.3 人月 = 10.3 人月、2〜3 名で 4〜5 ヶ月。
+`enterprise-ai-platform` 本体 10.0 人月 + 本サブシステム 3.3 人月 = **約 13.3 人月**、2〜3 名で 5〜6 ヶ月。
 
 ## 7. 技術スタック
 

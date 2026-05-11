@@ -30,33 +30,34 @@
 
 ### 1.3 必須機能（MVP / 拡張の分離）
 
-#### MVP（Phase 1〜3 で実装）
+#### MVP（Phase 1〜4 + Phase 6 の最小実装）
 - 単一 AWS アカウント / シングルリージョンで動作
 - 組織CRUD（部門・ポジション・従業員）
 - 3層SOULマージ、Bedrock 経由のチャット
 - Web Portal（チャットのみ）と Admin Console（最小：組織管理 + 監査閲覧）
-- 認証は Employee ID + Password のみ（Azure AD は後回し）
-- シングルランタイム（Standard ティア相当のみ）
-- DynamoDB シングルテーブル + S3 ワークスペース + 監査ログ
+- 認証は Employee ID + Password のみ（Azure AD は Phase 8 で導入）
+- シングルランタイム（Standard ティアのみ）を AgentCore Firecracker microVM で運用
+- DynamoDB シングルテーブル + S3 ワークスペース + 監査ログ（DynamoDB Streams → Firehose → S3 一次系を含む）
 
-#### 拡張機能（Phase 4 以降）
-- 4ティアランタイム / Bedrock Guardrails
-- 常時稼働 ECS Fargate モード
-- IMチャネル統合（Slack のみ）
-- デジタルツイン公開リンク
-- Azure AD SSO / SAML
-- スキルマーケットプレイス、コスト分析、Insights 検出器
+#### 拡張機能（Phase 5 以降）
+- 常時稼働 ECS Fargate モード（Phase 5）
+- IM チャネル統合（Slack のみ）（Phase 7）
+- ガバナンス機能（監査検索 UI・Insights・スキル統制・Azure AD SSO・Bedrock Guardrails ティア割当）（Phase 8）
+- デジタルツイン公開リンク・プレイグラウンド・IT 管理者アシスタント（Phase 9）
+- 負荷試験・一発デプロイ・ドキュメント整備（Phase 10）
 
 > **スコープ外:** EKS 対応、マルチリージョン、5,000ユーザー超のスケールは本プロジェクトの対象外。
 
 ### 1.4 成功基準
 
 - [ ] 50 ユーザー想定で `bash deploy.sh` 相当の一発デプロイが 30 分以内に完了
-- [ ] 平均レスポンスレイテンシ：コールドスタート < 10 秒、ウォーム < 3 秒
+- [ ] 平均レスポンスレイテンシ：コールドスタート 中央値 < 10s / p95 < 15s、ウォーム 中央値 < 3s / p95 < 5s
 - [ ] テストカバレッジ 80%+（unit / integration / e2e）
+- [ ] **マルチテナント漏洩テスト**: テナント ID 改ざん・偽プレフィックス注入・並行リクエスト混線の 100 ケース以上を CI 必須化
 - [ ] OWASP Top 10 への対策が CI で検証される
 - [ ] DynamoDB / S3 / Bedrock すべてが IAM 最小権限で構成
 - [ ] 1 ユーザー / 月 あたりの AWS コストが 500 ユーザー規模で $5 以下
+- [ ] 全コンポーネントが単一リージョン配置（クロスリージョン構成禁止）
 
 ---
 
@@ -76,7 +77,7 @@
 │ Edge / API Layer                                                │
 │   - CloudFront + WAF                                            │
 │   - API Gateway (REST/HTTP) → Lambda / ALB                      │
-│   - 認証: Cognito (MVP) → Azure AD/SAML (Phase 7)               │
+│   - 認証: Cognito (MVP) → Azure AD/SAML (Phase 8)               │
 └─────────────────────────────────────────────────────────────────┘
                                │
 ┌─────────────────────────────────────────────────────────────────┐
@@ -86,10 +87,11 @@
 └─────────────────────────────────────────────────────────────────┘
                                │
 ┌─────────────────────────────────────────────────────────────────┐
-│ Gateway Plane (Tenant Router + Bedrock H2 Proxy)                │
+│ Gateway Plane (Tenant Router + Bedrock H2 Proxy + MCP Gateway*) │
 │   - Tenant Resolver: channel_user_id → emp_id → runtime         │
 │   - 3ティアルーティング: 常時稼働 → ポジション → デフォルト       │
 │   - Bedrock H2 Proxy: AWS SigV4 署名 + ストリーミング            │
+│   * MCP Gateway は独立サブシステム — docs/MCP_GATEWAY_PLAN.md     │
 └─────────────────────────────────────────────────────────────────┘
                                │
 ┌─────────────────────────────────────────────────────────────────┐
@@ -141,13 +143,15 @@
 
 ### 2.3 セキュリティ境界（5層多層防御）
 
-| L# | 対策 | 実装 |
-|----|------|------|
-| L1 | SOUL ルール | Markdown プロンプト規約 |
-| L2 | ツール許可リスト | DynamoDB `PERM#{posId}` |
-| L3 | IAM ロール（ティア別） | 4 つの IAM ロール |
-| L4 | コンピュート分離 | Firecracker / Fargate Task 単位 |
-| L5 | Bedrock Guardrails | ティアごと割当 |
+| L# | 対策 | 実装 | Trust Boundary |
+|----|------|------|---|
+| L1 | SOUL ルール | Markdown プロンプト規約 | ❌ ガバナンス層（プロンプトインジェクションで破られうる） |
+| L2 | ツール許可リスト | DynamoDB `PERM#{posId}` | △ モデル遵守に依存 |
+| L3 | IAM ロール（ティア別） | 4 つの IAM ロール | ✅ インフラ境界 |
+| L4 | コンピュート分離 | Firecracker / Fargate Task 単位 | ✅ ハードウェア境界 |
+| L5 | Bedrock Guardrails | ティアごと割当 | ✅ インフラ境界 |
+
+> **重要**: L1 はガバナンス層（行動規範）であり、Trust Boundary ではありません。L1 単独に依存せず、必ず L3〜L5 のインフラ境界で防御してください。SLA・セキュリティ評価は L3 以降のみを保証範囲とします。
 
 ---
 
@@ -183,9 +187,12 @@
    - Dependencies: Step 2
    - Risk: High（過剰権限が後から残る）
 
-5. **DynamoDB シングルテーブル**（File: `infra/terraform/modules/dynamodb/`）
-   - Action: テーブル `enterprise-ai-platform-{env}`、PK/SK、GSI1〜GSI3、PITR、TTL、Streams 有効化
-   - Why: 全ドメイン（組織・SOUL・監査・ルーティング・マッピング）を単一テーブルで扱う設計
+5. **DynamoDB シングルテーブル + 監査一次系**（File: `infra/terraform/modules/dynamodb/`, `infra/terraform/modules/audit-pipeline/`）
+   - Action:
+     - テーブル `enterprise-ai-platform-{env}`、PK/SK、GSI1〜GSI3、PITR、TTL（90日）、Streams 有効化
+     - **DynamoDB Streams → Kinesis Firehose → S3 (Object Lock) → Athena テーブル を Phase 1 から構築**（旧 Phase 8 Step 1 を前倒し）
+     - DynamoDB 側の `AUDIT#` には直近 24〜72h のホット参照分のみ保持（TTL 自動削除）
+   - Why: ホットパーティション/GSI 書き込みコスト爆発を回避。長期保管・全文検索は S3 + Athena で実現
    - Dependencies: Step 2
    - Risk: Medium（GSI 設計を間違えるとクエリパターンが破綻）
 
@@ -239,13 +246,13 @@
    - Dependencies: Step 1
    - Risk: Low
 
-4. **Bedrock H2 Proxy (Node.js / Hono)**（File: `services/gateway/bedrock-proxy/src/server.ts`）
-   - Action: HTTP/2 で受信、AWS SigV4 で Bedrock 署名し直し、ストリーミング転送
-   - Why: OpenClaw 由来のクライアントは Bedrock API を直接叩く想定。プロキシで監査・ガードレール介入
+4. **Bedrock H2 Proxy (Python + FastAPI + httpx[http2])**（File: `services/gateway/bedrock-proxy/app/server.py`）
+   - Action: HTTP/2 で受信、AWS SigV4 (`botocore.auth.SigV4Auth`) で Bedrock 署名し直し、`httpx.AsyncClient(http2=True)` でストリーミング転送
+   - Why: OpenClaw 由来のクライアントは Bedrock API を直接叩く想定。プロキシで監査・ガードレール介入。**Python 統一でメンテコスト最小化**
    - Dependencies: Step 1
-   - Risk: High（ストリーミング維持と SigV4 の両立）
+   - Risk: High（ストリーミング維持と SigV4 の両立、p95 レイテンシ閾値 + バックプレッシャ試験必須）
 
-5. **ガードレール介入レイヤー**（File: `services/gateway/bedrock-proxy/src/middleware/guardrail.ts`）
+5. **ガードレール介入レイヤー**（File: `services/gateway/bedrock-proxy/app/middleware/guardrail.py`）
    - Action: Input/Output で `apply_guardrail` を呼び、ブロック時に監査イベント発行
    - Why: L5 セキュリティ
    - Dependencies: Step 4
@@ -257,17 +264,20 @@
    - Dependencies: Phase 1, Step 1〜5
    - Risk: Medium
 
-7. **ゲートウェイ単体・統合テスト**（File: `services/gateway/tenant-router/tests/`）
-   - Action: `moto` で DynamoDB をモック、解決パターン全網羅、ストリーミングテスト
-   - Why: ルーティング精度を 100% 担保
+7. **ゲートウェイ単体・統合テスト + マルチテナント漏洩テスト**（File: `services/gateway/tenant-router/tests/`, `tests/security/tenant-isolation/`）
+   - Action:
+     - `moto` で DynamoDB をモック、解決パターン全網羅、ストリーミングテスト
+     - **テナント ID 改ざん試行・偽プレフィックス注入・並行リクエストでのセッション混線を網羅する漏洩テストを CI 必須化**（§ 5.1 リスク表「マルチテナント情報漏洩」の緩和策）
+     - プロパティベーステスト（`hypothesis`）で `channel + userId` 入力空間を fuzz
+   - Why: ルーティング精度 100% + テナント間情報漏洩の確実な防止
    - Dependencies: Step 1〜5
    - Risk: Low
 
-**完了基準:** `curl /route` が `emp-001` を含むテナント解決結果を返す。Bedrock Proxy 経由でローカルから Claude Haiku に到達できる。
+**完了基準:** `curl /route` が `emp-001` を含むテナント解決結果を返す。Bedrock Proxy 経由でローカルから Claude Haiku に到達できる。テナント漏洩テスト 100 ケースが全パス。
 
 ---
 
-### Phase 3: Agent Container（複雑度: High / 工数: 3〜4週間）
+### Phase 3: Agent Container（複雑度: High / 工数: 5〜6 週間 ≒ 1.5 人月）
 
 **目的：** OpenClaw を内包し、3層SOULマージ・スキルロード・権限制御を行う実行コンテナを作る。
 
@@ -331,7 +341,12 @@
     - Dependencies: Step 1〜9
     - Risk: Low
 
-**完了基準:** ローカル Docker で `POST /invocations` を叩くと、3層 SOUL がマージされたうえで Bedrock 応答が返る。
+**完了基準:**
+- ローカル Docker で `POST /invocations` を叩くと 3 層 SOUL がマージされた応答が返る
+- **マージ結果のスナップショットテスト** (`tests/golden/soul_merge/`) 全 20 ケース以上が一致（Global only / Position only / Personal override 試行 / `CRITICAL IDENTITY OVERRIDE` 順序検証など）
+- ティア（Standard/Restricted/Engineering/Executive）切替が 1 設定変更で完結
+- 危険パターン拒否ケース（`rm -rf`, SQL injection 等）が 100% ブロック
+- 単体・統合テストカバレッジ 80%+
 
 ---
 
@@ -375,7 +390,12 @@
    - Dependencies: Step 1〜5
    - Risk: Medium
 
-**完了基準:** Tenant Router → AgentCore（Standard ティア）でエンド・ツー・エンド応答。コールドスタート < 10s。
+**完了基準:**
+- Tenant Router → AgentCore（Standard ティア）でエンド・ツー・エンド応答
+- コールドスタート: **中央値 < 10s, p95 < 15s**（10 連続実測、Workspace Assembler の S3 fetch 含む）
+- ウォーム応答: 中央値 < 3s, p95 < 5s
+- Session Storage で 2 回目以降のセッション再開が 2〜3s
+- 数値未達の場合は Provisioned Concurrency 検討タスクを Phase 5 と並列で計画
 
 ---
 
@@ -395,17 +415,17 @@
    - Dependencies: Phase 1
    - Risk: Medium
 
-3. **VPC IP 自己登録**（File: `services/agent-container/src/lifecycle/register.py`）
-   - Action: タスク起動時に SSM `/tenants/{empId}/always-on-agent` へ private IP を書き込み
-   - Why: Tenant Router がここを引く
+3. **Service Discovery (AWS Cloud Map) 登録**（File: `infra/terraform/modules/cloudmap/`, ECS タスク定義側）
+   - Action: ECS Service の `serviceRegistries` で AWS Cloud Map (`{empId}.always-on.internal`) に自動登録。Health Check に紐づき、停止時は自動で deregister
+   - Why: **SSM Parameter Store はサービスディスカバリ用途ではない**。再起動・スケール時の古い IP 参照を防ぐにはマネージドの Service Discovery（Cloud Map）か ALB ターゲットグループが必須
    - Dependencies: Step 1
-   - Risk: Medium
+   - Risk: Low（マネージド）
 
 4. **Tenant Router の Always-On 分岐**（File: `services/gateway/tenant-router/app/services/runtime_resolver.py`）
-   - Action: 1 番目に SSM チェック、ヒットすれば private IP に直接 HTTP
-   - Why: 3ティアルーティングの 1 段目
+   - Action: 1 番目に Cloud Map の DNS lookup（`{empId}.always-on.internal`）、ヒットすれば直接 HTTP、NXDOMAIN ならポジションルールへフォールスルー
+   - Why: 3ティアルーティングの 1 段目（IP 直接保持を廃止）
    - Dependencies: Step 3, Phase 2
-   - Risk: Medium
+   - Risk: Low
 
 5. **Always-On 切替 API**（File: `services/control-plane/api/routes/agents.py` の追加）
    - Action: `PATCH /agents/{id}/runtime-mode` で `serverless` ↔ `always-on`
@@ -413,11 +433,17 @@
    - Dependencies: Step 1
    - Risk: Medium
 
-**完了基準:** 管理者が UI から特定エージェントを Always-On に切替後、IM ボットから即時応答（コールドスタートなし）。
+**完了基準:**
+- 管理者が UI から特定エージェントを Always-On に切替後、Cloud Map に 30 秒以内に登録
+- 切替後の応答レイテンシ: 中央値 < 1s, p95 < 2s（コールドスタートゼロ）
+- Always-On コンテナ再起動時にリクエスト失敗ゼロ（10 分間 1 RPS の継続負荷で計測）
+- 成功率 99.5%+
 
 ---
 
-### Phase 6: 管理コンソール / Portal API（複雑度: High / 工数: 4〜5週間）
+### Phase 6: 管理コンソール / Portal API（複雑度: High / 工数: 10〜14 週間 ≒ 2.5〜3.5 人月）
+
+> **6a**（API 層: Step 1〜7, 約 1.5 人月）と **6b**（UI 層: Step 8〜10, 約 1.0〜2.0 人月）に分割可能。6a 完了後は curl / Postman で全機能検証可能、6b は React/Next.js 経験者数に応じて伸縮。
 
 **目的：** 組織管理・SOUL編集・監査閲覧の Web UI を提供する。
 
@@ -485,9 +511,11 @@
 
 ---
 
-### Phase 7: IM チャネル統合（Slack のみ）（複雑度: Medium / 工数: 1.5〜2週間）
+### Phase 7: IM チャネル統合（Slack のみ）（複雑度: Medium / 工数: 1.5〜2週間 ≒ 0.5 人月）
 
 **目的：** Slack からエージェントに到達できるようにする。本プロジェクトでは Slack のみをサポート対象とし、他 IM プラットフォーム（Teams / Telegram / Discord / Feishu / WhatsApp）はスコープ外。
+
+> **横断依存**: Step 4（Always-On 直接 Slack 接続）は **Phase 5** 完了が必須。Step 1〜3 は Phase 6 のみ依存。
 
 1. **IM Adapter 共通インタフェース**（File: `services/im-adapter/core/`）
    - Action: `IIMAdapter` インタフェース（`receive`, `send`, `verifyWebhook`）と共通バリデータ。将来的な拡張に備えた抽象化のみ用意し、実装は Slack 1 種類
@@ -601,7 +629,12 @@
    - Dependencies: Phase 6
    - Risk: Low
 
-**完了基準:** 公開 URL を別ブラウザで開き、ログインなしで該当従業員の AI と対話できる。
+**完了基準:**
+- 公開 URL を別ブラウザで開き、ログインなしで該当従業員の AI と対話できる
+- 公開エンドポイントのレート制限: 1 IP あたり 10 req/min, 1 トークンあたり 60 req/hour で動作確認
+- ツイン専用ワークスペースが従業員メモリへ書き戻しゼロ（ログ検証）
+- 従業員がトグルを OFF にすると 60 秒以内に URL が無効化
+- 公開エンドポイントのレスポンス成功率 99%+（負荷試験 100 req）
 
 ---
 
@@ -647,11 +680,20 @@ Phase 1 (Infra) ───┬──→ Phase 2 (Gateway) ──┐
                    │                        ├──→ Phase 4 (AgentCore) ──┬─→ Phase 5 (Always-On) ─┐
                    ├──→ Phase 3 (Container)─┤                          │                        │
                    │                                                   ├─→ Phase 6 (Console) ───┼─→ Phase 7 (IM) ──┐
-                   └──────────────────────────────────────────────────┘                         │                  ├─→ Phase 9 (Twin)
+                   └──────────────────────────────────────────────────┘                         │      ↑           ├─→ Phase 9 (Twin)
+                                                                                                │      │           │
+                                                                                                │      └─ Step 4 のみ Phase 5 依存
                                                                                                 ├─→ Phase 8 (Gov) ─┘
                                                                                                 │
                                                                                                 └────────────────────→ Phase 10
 ```
+
+**横断依存（MCP Gateway サブシステムとの結合点）**:
+- MCP Gateway Phase 4（Cognito JWT）← OpenClaw Phase 6（Cognito User Pool 構築）
+- MCP Gateway Phase 6（PII フィルタ）← OpenClaw Phase 8（Bedrock Guardrails ティア定義）
+- MCP Gateway Phase 7（Admin Console 統合）← OpenClaw Phase 6（Admin Console 基盤）
+
+並行 2 名体制では OpenClaw Phase 6 が両者のクリティカルパスとなるためボトルネック化に注意。
 
 ### AWS サービス依存
 - Bedrock AgentCore: us-east-1 / us-west-2 限定 → リージョン選定が全フェーズに影響
@@ -676,7 +718,7 @@ Phase 1 (Infra) ───┬──→ Phase 2 (Gateway) ──┐
 |-------|------|--------|
 | **OpenClaw バージョン非互換** | IM 統合崩壊 | Dockerfile で `2026.3.24` 固定、CI で検証 |
 | **AgentCore リージョン制限** | Tokyo 等で使えない | DynamoDB は別リージョン分離可、ユーザーに明示 |
-| **Bedrock H2 Proxy のストリーミング** | レスポンス遅延 | Hono + Node.js 22 ストリーミング、徹底ベンチ |
+| **Bedrock H2 Proxy のストリーミング** | レスポンス遅延 | FastAPI + `httpx[http2]` + `anyio`、p95 レイテンシ閾値 + バックプレッシャ試験を Phase 2 完了基準に必須化 |
 | **DynamoDB ホットパーティション** | 書き込み制限 | パーティションキーに `ORG#` を含めない設計、suffix 分散 |
 | **マルチテナント情報漏洩** | 重大インシデント | テナント ID 改ざんテストを CI 必須化 |
 | **コールドスタート** | UX 低下 | Session Storage、必要なら Provisioned Concurrency |
@@ -711,7 +753,11 @@ Phase 1 (Infra) ───┬──→ Phase 2 (Gateway) ──┐
 ### 法的・コンプライアンス
 
 - `sample/` のライセンス（AWS Samples / Apache 2.0 想定だが要確認） → コードはコピーせず参考のみ。本リポジトリのライセンスは MIT を予定
-- データ越境 → Bedrock のリージョン選定に注意、EU データは EU リージョンへ
+- **リージョン戦略（重要）**:
+  - 全コンポーネント（VPC / DynamoDB / S3 / AgentCore / ECS / Cognito）を **単一リージョンに強制配置**する
+  - AgentCore は us-east-1 / us-west-2 のいずれかを選択。クロスリージョン構成は禁止（Workspace Assembler の S3 / DynamoDB 高頻度アクセスが p95 < 15s 要件と衝突するため）
+  - **EU / APAC のデータ主権要件があるテナント** → 当該リージョンに AgentCore がない場合は、Phase 5 の **ECS Fargate Always-On モードへ強制ルーティング**（同リージョンに ECS は配置可能）して対応。Tenant Router のルーティング設定で `region_override` を実装する
+- データ越境 → 当該テナントの全データ（ワークスペース・監査・KB）が単一リージョンに留まることを Terraform で強制
 
 ---
 
@@ -719,17 +765,19 @@ Phase 1 (Infra) ───┬──→ Phase 2 (Gateway) ──┐
 
 | Phase | 複雑度 | 工数（人月） | 並行可能 |
 |-------|--------|------------|----------|
-| 1: 基盤インフラ | Medium | 0.5 | - |
-| 2: ゲートウェイ | High | 0.75 | Phase 3 と並行可 |
-| 3: Agent Container | High | 1.0 | Phase 2 と並行可 |
+| 1: 基盤インフラ + 監査一次系 | Medium | 0.75 | - |
+| 2: ゲートウェイ + テナント漏洩テスト | High | 1.0 | Phase 3 と並行可 |
+| 3: Agent Container | High | 1.5 | Phase 2 と並行可 |
 | 4: AgentCore 統合 | High | 0.5 | - |
-| 5: Always-On | Medium | 0.5 | Phase 6 と並行可 |
-| 6: 管理コンソール | High | 1.5 | Phase 5 と並行可 |
-| 7: IM チャネル (Slack のみ) | Medium | 0.5 | - |
+| 5: Always-On (Cloud Map) | Medium | 0.5 | Phase 6 と並行可 |
+| 6: 管理コンソール (6a API + 6b UI) | High | 3.0 | Phase 5 と並行可（6a 完了が他フェーズの結合条件） |
+| 7: IM チャネル (Slack のみ) | Medium | 0.5 | Phase 5/6 完了後 |
 | 8: ガバナンス | Medium | 0.75 | Phase 9 と並行可 |
 | 9: デジタルツイン | Medium | 0.5 | Phase 8 と並行可 |
-| 10: テスト・ドキュメント | Medium | 0.5（継続） | 全期間 |
-| **合計** | - | **約 7.0 人月** | 2〜3 名で 3〜4 ヶ月 |
+| 10: テスト・ドキュメント | Medium | 1.0（継続） | 全期間 |
+| **合計** | - | **約 10.0 人月** | 2〜3 名で 4〜5 ヶ月 |
+
+> 旧見積もり（7.0 人月）は Phase 3・6 が楽観的だったため改定。Phase 6 はクリティカルパスのため UI 経験者を 1 名は確保すること。
 
 ---
 
@@ -746,7 +794,7 @@ enterprise-ai-platform/
 │   │   └── api/                          # FastAPI (組織CRUD/SOUL/監査/使用量)
 │   ├── gateway/
 │   │   ├── tenant-router/                # FastAPI
-│   │   └── bedrock-proxy/                # Node.js / Hono
+│   │   └── bedrock-proxy/                # FastAPI + httpx + h2 (Python 統一)
 │   ├── agent-container/                  # Python + OpenClaw コンテナ
 │   │   ├── src/
 │   │   │   ├── workspace/
@@ -827,9 +875,10 @@ enterprise-ai-platform/
 | 用途 | 言語 | バージョン | 理由 |
 |------|------|----------|------|
 | フロントエンド | TypeScript | 5.6+ | 型安全 |
-| Control Plane / Tenant Router / Agent Container | Python | 3.12 | OpenClaw / boto3 連携 |
-| Bedrock H2 Proxy | Node.js | 22 LTS | HTTP/2 + ストリーミング性能 |
+| 全バックエンドサービス (Control Plane / Tenant Router / Bedrock H2 Proxy / Agent Container) | Python | 3.12 | OpenClaw / boto3 連携、SigV4・監査スキーマ・共通ライブラリの単一メンテ |
 | IaC | HCL (Terraform) | 1.10+ | モジュール化容易 |
+
+> Bedrock H2 Proxy は当初 Node.js / Hono を検討したが、`httpx` + `h2` + `anyio` で Python でも同等の HTTP/2 ストリーミング性能が達成できるため、運用負債削減のため Python に統一。CI の静的解析（Ruff）も単一系統で済む。
 
 ### フレームワーク
 
@@ -837,7 +886,7 @@ enterprise-ai-platform/
 |----|------|------|
 | Web フロント | Next.js 15 (App Router) + React 19 + Tailwind 4 + shadcn/ui | エンタープライズ標準、SSR + RSC |
 | バックエンド API | FastAPI + Pydantic v2 | 型安全 + OpenAPI 自動 |
-| ストリーミングプロキシ | Hono | 軽量・HTTP/2 対応 |
+| ストリーミングプロキシ | FastAPI + `httpx` + `h2` + `anyio` | Python 統一、HTTP/2 + SigV4 ストリーミング対応 |
 | IM SDK | Slack Bolt SDK (Python) | 公式推奨、本プロジェクトは Slack のみサポート |
 
 ### AWS サービス
@@ -875,7 +924,7 @@ enterprise-ai-platform/
 | AWS 認証 | OIDC（IAM Role） |
 | IaC | Terraform Cloud（state） / Atlantis（plan PR） |
 | コンテナビルド | Buildx (ARM64 cross-build) |
-| 静的解析 | Ruff (Python) / Biome (TS) / Trivy / Semgrep / Checkov / gitleaks |
+| 静的解析 | Ruff (Python 統一) / Biome (TS) / Trivy / Semgrep / Checkov / gitleaks |
 | テスト | pytest / Vitest / Playwright / k6 |
 | カバレッジ | Codecov（80% gate） |
 

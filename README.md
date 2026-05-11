@@ -8,7 +8,7 @@
 
 | ドキュメント | 概要 |
 |---|---|
-| [docs/OPENCLAW_PLATFORM_PLAN.md](docs/OPENCLAW_PLATFORM_PLAN.md) | OpenClaw プラットフォーム本体の実装プラン（10 フェーズ、約 7.0 人月） |
+| [docs/OPENCLAW_PLATFORM_PLAN.md](docs/OPENCLAW_PLATFORM_PLAN.md) | OpenClaw プラットフォーム本体の実装プラン（10 フェーズ、約 10.0 人月） |
 | [docs/MCP_GATEWAY_PLAN.md](docs/MCP_GATEWAY_PLAN.md) | MCP Gateway サブシステムの実装プラン（8 フェーズ、約 3.3 人月） |
 | [CLAUDE.md](CLAUDE.md) | Claude Code 向けのリポジトリ作業ガイダンス |
 
@@ -58,7 +58,7 @@ AI (Bedrock + Guardrails + Knowledge Bases)
 |---|---|
 | フロントエンド | Next.js 15 + React 19 + Tailwind 4 + shadcn/ui |
 | バックエンド | FastAPI (Python 3.12) + Pydantic v2 |
-| Bedrock プロキシ | Hono (Node.js 22 LTS) |
+| Bedrock プロキシ | FastAPI + httpx + h2 (Python 3.12, Bedrock H2 Proxy も Python 統一) |
 | IaC | Terraform 1.10+ |
 | データ | DynamoDB シングルテーブル + S3 + Secrets Manager + SSM |
 | AI | AWS Bedrock (Nova / Claude / DeepSeek) + AgentCore + Guardrails |
@@ -91,6 +91,14 @@ AI (Bedrock + Guardrails + Knowledge Bases)
 | **M2** | 200〜300 ユーザー、常時稼働、Slack 連携 |
 | **M3** | 500 ユーザー、フルガバナンス、デジタルツイン、Azure AD |
 | **M4** | 500 ユーザー、SOC2 準拠基盤、運用安定化 |
+
+## 工数見積もり
+
+| サブシステム | 人月 | 期間（2〜3 名） |
+|---|---|---|
+| OpenClaw 本体 | 10.0 | 4〜5 ヶ月 |
+| MCP Gateway | 3.3 | 2〜3 ヶ月 |
+| **合計** | **13.3** | **5〜6 ヶ月** |
 
 ## 想定コスト（500 ユーザー規模）
 
