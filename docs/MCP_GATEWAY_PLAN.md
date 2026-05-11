@@ -214,11 +214,11 @@ Shared Infra: DynamoDB / S3 / Secrets Manager / SSM / Cognito / CloudWatch
 **横断依存（OpenClaw 本体プランとの結合点）**:
 | MCP Gateway Phase | 依存する OpenClaw Phase |
 |---|---|
-| Phase 4（Cognito JWT） | OpenClaw Phase 6（Cognito User Pool） |
+| Phase 4（Cognito JWT） | OpenClaw **Phase 6a Step 3**（RBAC + Cognito User Pool）— **6a 全体完了を待たずに着手可** |
 | Phase 6（PII / Bedrock Guardrails） | OpenClaw Phase 8（Guardrails ティア定義） |
-| Phase 7（Admin Console 統合） | OpenClaw Phase 6（Admin Console 基盤） |
+| Phase 7（Admin Console 統合） | OpenClaw **Phase 6b**（Admin Console 基盤） |
 
-並行 2 名体制では OpenClaw Phase 6 が両者のクリティカルパス。MCP Gateway 単独で Phase 7 へ進めない点に注意。
+並行 2 名体制では OpenClaw Phase 6a Step 3 完了時点で MCP Phase 4 が着手可能。これにより本体 6b（UI）と MCP Phase 4〜7 を並行進行でき、Phase 6 全体待ちより 0.5〜1 人月短縮できる。
 
 ### 4.3 配置
 
@@ -304,8 +304,8 @@ Shared Infra: DynamoDB / S3 / Secrets Manager / SSM / Cognito / CloudWatch
 ### 7.5 既存統合
 
 - AWS インフラ完全統合
-- 認証: MCP Gateway Phase 4 で Cognito JWT を採用（OpenClaw 本体 Phase 6 で構築済み User Pool を共有）。Azure AD SSO は OpenClaw 本体 Phase 8 完了に合わせて連携
-- Admin Console に 1 ページ追加（OpenClaw 本体 Phase 6 完了が前提）
+- 認証: MCP Gateway Phase 4 で Cognito JWT を採用（OpenClaw 本体 **Phase 6a Step 3** で構築済み User Pool を共有 — 6a 全体完了を待たずに着手可）。Azure AD SSO は OpenClaw 本体 Phase 8 完了に合わせて連携
+- Admin Console に 1 ページ追加（OpenClaw 本体 **Phase 6b**（UI 層）完了が前提）
 - 監査基盤再利用（`packages/audit-events/` 共有）、ECS は別タスク・DynamoDB は別テーブル
 
 ## 8. ディレクトリ構成案

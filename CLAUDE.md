@@ -82,7 +82,7 @@ AI (Bedrock + Guardrails + Knowledge Bases)
 
 ## プラン運用上の注意
 
-- MVP は Phase 1〜4 + Phase 6a（API 層の最小実装）。Phase 6b（UI）は M2 以降。後続フェーズは前フェーズの完了に依存します（依存関係マップは `docs/OPENCLAW_PLATFORM_PLAN.md` § 4、横断依存も同節を参照）。
-- 重要な設計判断は `docs/adr/` の Architecture Decision Records として記録します（例: ADR 0001 でバックエンドの Python 統一）。設計変更を提案する際は該当 ADR を更新するか、新規 ADR を起こしてください。
+- MVP は Phase 1〜4 + Phase 6a（API 層の最小実装、最小限の Portal Chat UI のみ）。本格的な Admin Console / Portal UI（Phase 6b）は M2 以降。後続フェーズは前フェーズの完了に依存します（依存関係マップは `docs/OPENCLAW_PLATFORM_PLAN.md` § 4、横断依存も同節を参照）。MCP Gateway Phase 4 は本体 Phase 6a Step 3 完了で着手可能。
+- 重要な設計判断は `docs/adr/` の Architecture Decision Records として記録します（例: [ADR 0001: Python 統一バックエンド](docs/adr/0001-python-unified-backend.md)）。設計変更を提案する際は該当 ADR を更新するか、新規 ADR を起こしてください。
 - プランは意図的に 2 回スコープ縮小されています: (1) 5,000 → 500 ユーザー、(2) 5 IM プラットフォーム → Slack のみ。さらなるスコープ拡大要望は、ルーチンな進化ではなく、改めてユーザー確認が必要な事項として扱ってください。
 - ユーザーの母語は日本語です。設計ドキュメントの議論・コメント・コミットメッセージなどは日本語を優先してください。

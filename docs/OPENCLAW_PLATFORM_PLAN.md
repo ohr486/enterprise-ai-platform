@@ -30,11 +30,11 @@
 
 ### 1.3 必須機能（MVP / 拡張の分離）
 
-#### MVP（Phase 1〜4 + Phase 6 の最小実装）
+#### MVP（Phase 1〜4 + Phase 6a の最小実装）
 - 単一 AWS アカウント / シングルリージョンで動作
-- 組織CRUD（部門・ポジション・従業員）
-- 3層SOULマージ、Bedrock 経由のチャット
-- Web Portal（チャットのみ）と Admin Console（最小：組織管理 + 監査閲覧）
+- Phase 6a（API 層）で組織 CRUD（部門・ポジション・従業員）・SOUL 編集・監査検索・使用量集計を curl / Postman / OpenAPI スキーマで提供
+- 3 層 SOUL マージ、Bedrock 経由のチャット
+- **最小限の Portal Chat UI のみ**（チャット機能 1 画面）。本格的な Admin Console (8 ページ) / Portal (5 ページ) は Phase 6b で M2 にて追加
 - 認証は Employee ID + Password のみ（Azure AD は Phase 8 で導入）
 - シングルランタイム（Standard ティアのみ）を AgentCore Firecracker microVM で運用
 - DynamoDB シングルテーブル + S3 ワークスペース + 監査ログ（DynamoDB Streams → Firehose → S3 一次系を含む）
@@ -222,7 +222,12 @@
    - Dependencies: Step 2
    - Risk: Medium
 
-**完了基準:** `terraform apply` で空の VPC + DynamoDB + S3 + IAM が dev 環境に作成される。`pnpm build` がモノレポ全体で通る。
+**完了基準:**
+- `terraform apply` で VPC + DynamoDB + S3 + IAM + 監査一次系（Firehose + Athena + Object Lock）が dev 環境に作成される
+- `pnpm build` がモノレポ全体で通る
+- **監査一次系の動作検証**: ダミーイベントを DynamoDB Streams 経由で Firehose に投入し、5 分以内に S3 Object Lock バケットへ Parquet 形式で配信、Athena クエリで読み取り可能
+- **IAM Access Analyzer**: 4 ティアロールの過剰権限を CI で検出（過剰権限ゼロ）
+- **VPC Endpoint 疎通**: Bedrock / DynamoDB / S3 / SSM / ECR への接続が Private Subnet から成功
 
 ---
 
@@ -275,7 +280,12 @@
    - Dependencies: Step 1〜5
    - Risk: Low
 
-**完了基準:** `curl /route` が `emp-001` を含むテナント解決結果を返す。Bedrock Proxy 経由でローカルから Claude Haiku に到達できる。テナント漏洩テスト 100 ケースが全パス。
+**完了基準:**
+- `curl /route` が `emp-001` を含むテナント解決結果を返す
+- Bedrock Proxy 経由でローカルから Claude Haiku に到達できる
+- **Bedrock H2 Proxy 透過オーバーヘッド: p95 < 50ms（Bedrock 直叩きとの差分、100 リクエスト実測）**
+- ストリーミング応答のバックプレッシャ試験（クライアント切断時の上流リソース解放）を `pytest-asyncio` で検証
+- テナント漏洩テスト 100 ケースが全パス（ADR 0001 の性能未達時は Hono 採用を再検討）
 
 ---
 
@@ -439,7 +449,9 @@
    - Risk: Medium
 
 **完了基準:**
-- 管理者が UI から特定エージェントを Always-On に切替後、Cloud Map に 30 秒以内に登録
+- 管理者が UI から特定エージェントを Always-On に切替後、Cloud Map への register API 完了が 30 秒以内
+- **切替トリガから新 DNS 応答が安定するまで p95 < 45 秒**（register API 完了 + DNS TTL expiry を含む実測）
+- **停止中タスク IP がクライアントに返らなくなるまで p95 < 20 秒**（deregister + TTL expiry）
 - 切替後の応答レイテンシ: 中央値 < 1s, p95 < 2s（コールドスタートゼロ）
 - Always-On コンテナ再起動時にリクエスト失敗ゼロ（10 分間 1 RPS の継続負荷で計測）
 - 成功率 99.5%+
@@ -512,7 +524,19 @@
     - Dependencies: Step 1〜7
     - Risk: Low
 
-**完了基準:** 管理者がブラウザで部門・ポジション・従業員を作成 → 自動でエージェントが立ち上がり、Portal でチャット可能。
+**完了基準:**
+
+Phase 6a（API 層）:
+- OpenAPI スキーマで全エンドポイント（組織 CRUD / SOUL / 監査 / 使用量 / Auto-Provisioning）が定義され、`schemathesis` で 100% カバレッジ
+- RBAC 拒否ケース 20 件（Admin/Manager/Employee の越境試行）が全成功
+- Auto-Provisioning の部分失敗時の補償トランザクションが動作（DynamoDB トランザクション or Saga パターン）
+- 監査検索 GSI で 1 万件から特定ユーザーを 2 秒以内に抽出
+- pytest + httpx で API 統合テストカバレッジ 80%+
+
+Phase 6b（UI 層）:
+- 管理者がブラウザで部門・ポジション・従業員を作成 → 自動でエージェントが立ち上がり、Portal でチャット可能
+- Playwright e2e で全 13 ページの主要操作（CRUD / SOUL 編集 / 監査閲覧 / Slack ペアリング / Digital Twin トグル）が完了
+- アクセシビリティ: Lighthouse スコア 80+ on 主要 5 ページ
 
 ---
 
@@ -596,7 +620,14 @@
    - Dependencies: Phase 6
    - Risk: High
 
-**完了基準:** 監査画面で 1 万件のイベントを検索 < 2 秒。Guardrails ブロックが UI 上で時系列に閲覧可能。
+**完了基準:**
+- 監査画面で 1 万件のイベントを検索 < 2 秒
+- Guardrails ブロックが UI 上で時系列に閲覧可能
+- **Insight Detector**: 5 異常パターンの検出率 90%+（テストデータセット 100 件）
+- **Bedrock Guardrails ティア割当**: UI から 4 ティアいずれかにガードレールを 1 クリックで割当・解除、変更が 30 秒以内に Tenant Router に反映
+- **スキル承認ワークフロー**: 従業員のスキル要求 → 管理者承認 → `PERM#{posId}` 反映までエンドツーエンドで動作
+- **Azure AD SSO**: 既存 Cognito User Pool との SAML フェデレーション、emp_id クレームマッピングが 5 ユーザーで成功
+- **長期保管**: Athena から過去 7 日分の監査ログを SQL クエリで集計可能
 
 ---
 
@@ -669,6 +700,12 @@
    - Dependencies: Phase 1 監査一次系、Phase 5 MCP 監査
    - Risk: Low
 
+3b. **AuditRepository IAM 境界テスト**（File: `tests/security/audit-iam/test_table_isolation.py`）
+   - Action: IAM Simulator API で「本体タスクロールが MCP テーブルへ Put/Get できない」「MCP タスクロールが本体テーブルへ Put/Get できない」を検証。テーブル名注入による越権を防止
+   - Why: `AuditRepository(tableName)` 抽象でテーブル切替時、IAM リソース ARN が誤って `*` ワイルドカードになっていないか検証
+   - Dependencies: Phase 1 IAM ロール、Phase 5 MCP 監査
+   - Risk: Low
+
 4. **`deploy.sh` 一発デプロイ**（File: `scripts/deploy.sh`）
    - Action: `terraform apply` → コンテナビルド・push → AgentCore Runtime 登録 → シード → 起動確認
    - Why: 30 分以内デプロイ要件
@@ -680,6 +717,13 @@
    - Why: 運用引き継ぎ
    - Dependencies: 全フェーズ
    - Risk: Low
+
+**Phase 10 完了基準:**
+- **e2e**: 50 ユーザージャーニー（オンボーディング → SOUL 編集 → Slack ペアリング → チャット → デジタルツイン 等）すべてが Playwright で成功率 100%
+- **負荷試験**: 500 同時接続で API 成功率 99.5%+、Bedrock 応答 p95 < 5s（ウォーム）、`tools/call` p95 < 200ms
+- **静的解析**: Semgrep / Trivy / Checkov / gitleaks すべて Critical/High 検出ゼロ
+- **`deploy.sh`**: クリーン AWS アカウントで実行 → 30 分以内に M1 機能を全テスト完了
+- **ドキュメント**: アーキ図 / Runbook / セキュリティガイド / トラブルシュート / API リファレンスが揃い、新規メンバーが onboarding 1 日で MVP 機能を起動できる
 
 ---
 
@@ -700,11 +744,11 @@ Phase 1 (Infra) ───┬──→ Phase 2 (Gateway) ──┐
 ```
 
 **横断依存（MCP Gateway サブシステムとの結合点）**:
-- MCP Gateway Phase 4（Cognito JWT）← OpenClaw Phase 6（Cognito User Pool 構築）
+- MCP Gateway Phase 4（Cognito JWT）← OpenClaw **Phase 6a Step 3**（RBAC + Cognito User Pool 構築）— 6a 全体完了を待たずに着手可
 - MCP Gateway Phase 6（PII フィルタ）← OpenClaw Phase 8（Bedrock Guardrails ティア定義）
-- MCP Gateway Phase 7（Admin Console 統合）← OpenClaw Phase 6（Admin Console 基盤）
+- MCP Gateway Phase 7（Admin Console 統合）← OpenClaw **Phase 6b**（Admin Console 基盤）
 
-並行 2 名体制では OpenClaw Phase 6 が両者のクリティカルパスとなるためボトルネック化に注意。
+並行 2 名体制では Phase 6a Step 3 完了時点で MCP Phase 4 を着手可能。本体 6b と MCP Phase 4〜7 を並行進行できるため、Phase 6 全体待ちより 0.5〜1 人月の短縮効果がある。
 
 ### AWS サービス依存
 - Bedrock AgentCore: us-east-1 / us-west-2 限定 → リージョン選定が全フェーズに影響
@@ -780,8 +824,8 @@ Phase 1 (Infra) ───┬──→ Phase 2 (Gateway) ──┐
 | 3: Agent Container | High | 1.5 | Phase 2 と並行可 |
 | 4: AgentCore 統合 | High | 0.5 | - |
 | 5: Always-On (Cloud Map) | Medium | 0.5 | Phase 6 と並行可 |
-| **6a**: 管理コンソール API（FastAPI + DynamoDB Repository + RBAC + Auto-Provisioning + SOUL Editor + 監査検索 + 使用量集計） | High | 1.5 | Phase 5 と並行可 |
-| **6b**: Admin Console + Portal フロントエンド（Next.js 15、13 ページ） | High | 1.5 | Phase 6a 完了後（6a で MCP Phase 4 結合解除） |
+| **6a**: 管理コンソール API（FastAPI + DynamoDB Repository + RBAC + Auto-Provisioning + SOUL Editor + 監査検索 + 使用量集計） | High | 1.5 | Phase 5 と並行可。**Step 3（RBAC + Cognito）完了時点で MCP Gateway Phase 4 着手可** |
+| **6b**: Admin Console + Portal フロントエンド（Next.js 15、13 ページ） | High | 1.5 | Phase 6a 完了後 |
 | 7: IM チャネル (Slack のみ) | Medium | 0.5 | Phase 5/6 完了後 |
 | 8: ガバナンス | Medium | 0.75 | Phase 9 と並行可 |
 | 9: デジタルツイン | Medium | 0.5 | Phase 8 と並行可 |
@@ -790,7 +834,7 @@ Phase 1 (Infra) ───┬──→ Phase 2 (Gateway) ──┐
 
 > 旧見積もり（7.0 人月）は Phase 1・3・6 が楽観的だったため改定。Phase 6a はクリティカルパス（MCP Gateway Phase 4 着手の前提）のため最優先で進めること。Phase 6b は UI 経験者を 1 名以上確保すること。
 
-> **6a/6b 分割の効果**: Phase 6a 完了時点で全機能を curl / Postman で検証可能。MCP Gateway Phase 4 (Cognito JWT) を 6a 完了直後に着手できるため、並行効率が向上。
+> **6a/6b 分割の効果**: Phase 6a Step 3（RBAC + Cognito）完了で MCP Gateway Phase 4 着手可能。Phase 6a 全体完了時点で全機能を curl / Postman / OpenAPI で検証可能。6a 完了を待たずに MCP Gateway Phase 4 と本体 Phase 6b を並行進行でき、Phase 6 全体待ちより 0.5〜1 人月短縮できる。
 
 ---
 

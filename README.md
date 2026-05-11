@@ -11,6 +11,7 @@
 | [docs/OPENCLAW_PLATFORM_PLAN.md](docs/OPENCLAW_PLATFORM_PLAN.md) | OpenClaw プラットフォーム本体の実装プラン（10 フェーズ、約 10.25 人月） |
 | [docs/MCP_GATEWAY_PLAN.md](docs/MCP_GATEWAY_PLAN.md) | MCP Gateway サブシステムの実装プラン（8 フェーズ、約 3.3 人月） |
 | [docs/adr/](docs/adr/) | Architecture Decision Records（設計判断の履歴） |
+| └ [0001: Python 統一バックエンド](docs/adr/0001-python-unified-backend.md) | Bedrock H2 Proxy を含む全バックエンドを Python 3.12 に統一する判断 |
 | [CLAUDE.md](CLAUDE.md) | Claude Code 向けのリポジトリ作業ガイダンス |
 
 ## 提供価値
@@ -88,7 +89,7 @@ AI (Bedrock + Guardrails + Knowledge Bases)
 
 | マイルストーン | 含むフェーズ | 提供価値 |
 |---|---|---|
-| **M1 MVP** | Phase 1〜4 + Phase 6（最小実装） | 50 ユーザー、Portal チャット、Standard ティアのみ |
+| **M1 MVP** | Phase 1〜4 + Phase 6a（API 層の最小実装） | 50 ユーザー、Portal チャット（最小 UI のみ）、Standard ティアのみ。Phase 6b の本格的な Admin Console / Portal UI は M2 で追加 |
 | **M2** | + Phase 5, 7 | 200〜300 ユーザー、常時稼働、Slack 連携 |
 | **M3** | + Phase 8, 9 | 500 ユーザー、フルガバナンス、デジタルツイン、Azure AD |
 | **M4** | + Phase 10 強化 | 500 ユーザー、SOC2 準拠基盤、運用安定化 |
