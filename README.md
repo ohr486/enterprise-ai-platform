@@ -60,7 +60,7 @@ Data Plane (Bedrock AgentCore microVM ← MVP / ECS Fargate Always-On ← Phase 
     ↓
 State (DynamoDB 本体テーブル + KDB 専用テーブル + S3 + SSM/Secrets)
     ↓
-AI (Bedrock + Guardrails + Knowledge Bases [KDB])
+AI (Bedrock + Guardrails) + KDB (Bedrock Knowledge Bases ストレージ)
 ```
 
 横断サブシステム（KDB / MCP Gateway）は本体と共通インフラ（VPC / Cognito / 監査基盤）を共有しつつ独立配置されます。詳細は [docs/OPENCLAW_PLATFORM_REQUIREMENTS.md](docs/OPENCLAW_PLATFORM_REQUIREMENTS.md) を参照。
@@ -117,7 +117,7 @@ AI (Bedrock + Guardrails + Knowledge Bases [KDB])
 |---|---|---|
 | OpenClaw 本体 | 10.25 | 4〜5 ヶ月 |
 | MCP Gateway | 3.3 | 2〜3 ヶ月 |
-| Knowledge DB (KDB) | 実装プラン未起票（要件定義のみ） | — |
+| Knowledge DB (KDB) | — (実装プラン未起票) | — |
 | **合計** | **13.55+（KDB 別途）** | **5〜6 ヶ月** |
 
 ## 想定コスト（500 ユーザー規模）

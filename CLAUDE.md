@@ -51,9 +51,9 @@ Gateway Plane (Tenant Router + Bedrock H2 Proxy + MCP Gateway — 3 ティアル
     ↓
 Data Plane (Bedrock AgentCore microVM もしくは ECS Fargate Always-On)
     ↓
-State (DynamoDB シングルテーブル + S3 ワークスペース/KB/監査 + SSM/Secrets)
+State (DynamoDB 本体テーブル + KDB 専用テーブル + S3 ワークスペース/KB/監査 + SSM/Secrets)
     ↓
-AI (Bedrock + Guardrails + Knowledge Bases)
+AI (Bedrock + Guardrails) + KDB (Bedrock Knowledge Bases ストレージ)
 ```
 
 コンポーネントを横断する 3 つの load-bearing なコンセプトがあります:
@@ -76,7 +76,7 @@ AI (Bedrock + Guardrails + Knowledge Bases)
 
 - 専用 DynamoDB テーブル `enterprise-ai-platform-kdb-{env}` を新設し、本体 / MCP Gateway テーブルから **物理分離**（I/O 競合 / PITR コスト結合の回避）
 - 本体 Phase 9 Step 5 の `directory_kb.py`（組織ディレクトリ Markdown 自動注入）とは **共存**（統合せず両者並存）
-- 実装プラン (`docs/KNOWLEDGE_DB_PLAN.md`) は未起票。実装着手前に起票が必要
+- 実装プラン（`docs/KNOWLEDGE_DB_PLAN.md` ※命名規則上の予定、原典未確定）は未起票。実装着手前に起票が必要
 - 起票予定 ADR: 0002（Bedrock KB 採用）/ 0003（独立サービス配置）/ 0004（DynamoDB テーブル分離）
 
 ## リポジトリ構成
