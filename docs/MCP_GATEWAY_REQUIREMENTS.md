@@ -409,7 +409,7 @@
 | NFR-TEN-01 | DynamoDB テーブル `enterprise-ai-platform-mcp-gw-{env}` を新設 | 決定 |
 | NFR-TEN-02 | PITR / TTL / On-Demand 容量を独立設定 | 決定 |
 | NFR-TEN-03 | Gateway タスクロールは MCP テーブルのみ Read/Write 可、本体 / KDB テーブルは拒否（Resource ARN 厳格指定） | 決定 |
-| NFR-TEN-04 | IAM 越権防止: AuditRepository IAM 境界テスト 3 系統に拡張（本体 / MCP / KDB） | 決定（本体 § 10.3 AC-S-06 と同方針） |
+| NFR-TEN-04 | IAM 越権防止: AuditRepository IAM 境界テスト 3 系統に拡張（本体 / MCP / KDB） | 決定（本体 § 10.3 **AC-S-11** と同方針） |
 | NFR-TEN-05 | スキーマは 3 系統共通（`AuditRepository(tableName)` 抽象で吸収） | 決定 |
 
 ### 4.6 監査
@@ -445,6 +445,8 @@
 
 ### 4.9 コスト
 
+> 本表は MCP Gateway 単体のサマリ。詳細内訳は § 9.3 を参照。3 書合算は **本体要件書 § 4.9 / § 9.3 を一次出典**とし、本書は MCP 単体の金額のみを担当する。
+
 | 項目 | MVP / 月 | 500 ユーザー / 月 |
 |---|---|---|
 | ECS Fargate（2 AZ × 2 task） | $40 | $80 |
@@ -453,9 +455,16 @@
 | S3 + CloudFront | $5 | $20 |
 | Secrets Manager | $5 | $15 |
 | ElastiCache（任意、`tools/list` キャッシュ強化用） | $0 | $30 |
-| **小計** | **$80** | **$220** |
+| **小計（MCP Gateway 単独）** | **$80** | **$220** |
 
-> 本体予算（500〜1,000 USD/月）+ KDB（200〜400 USD/月）+ MCP Gateway（80〜220 USD/月）= **合計 780〜1,620 USD/月**。本体「1 ユーザー / 月 $5 以下」目標（500 ユーザーで $2,500）の枠内に収まる。
+3 書合算（本体要件書 § 9.3 と整合）:
+
+| マイルストーン | 本体（§ 9.3 小計） | KDB | MCP Gateway | 合計 | 成功基準目標（$5/user × N） |
+|---|---|---|---|---|---|
+| MVP（M1: 50 ユーザー） | $255〜$435 | $80〜$130 | $80 | **$415〜$645** | $250 |
+| 最終（M3: 500 ユーザー） | $2,090〜$3,290 | $300〜$640 | $220 | **$2,610〜$4,150** | **$2,500** |
+
+> 500 ユーザー時の最大想定が目標 $2,500 を超過しうる点は本体要件書 § 9.3 と同認識。Bedrock 推論コストの最適化で吸収。
 
 ---
 
@@ -826,7 +835,7 @@ upstreams:
 | AC-P-03 | ACL 評価 p95 < 20ms |
 | AC-P-04 | レート制限応答 p95 < 50ms |
 | AC-P-05 | `/healthz` 応答 < 50ms |
-| AC-P-06 | 500 同時接続で全 RPC 成功率 99.9%+（k6 負荷試験） |
+| AC-P-06 | **500 同時 MCP セッション**（クライアントごとに 1 セッション = 1 Streamable HTTP 長時間接続）で、その上を流れる全 RPC（`initialize` / `tools/list` / `tools/call` / `resources/*`）の成功率 99.9%+。上流タイムアウト由来の失敗は除外し、Gateway 内部起因のみで判定。本体 § 4.3「Concurrent Sessions 100」とは別軸（本体は AgentCore セッション、本書は MCP セッション） |
 | AC-P-07 | Multi-AZ で 1 タスク強制終了しても 30 秒以内に ALB ターゲットから除外、Drained Connections ゼロ |
 
 ### 10.3 セキュリティ受け入れ基準
@@ -838,7 +847,7 @@ upstreams:
 | AC-S-03 | 上流クレデンシャルが Secrets Manager にのみ存在、コードベース全文検索で生トークン検出ゼロ（gitleaks） |
 | AC-S-04 | IAM Access Analyzer で過剰権限ゼロ |
 | AC-S-05 | OWASP Top 10 全カテゴリの自動検査（Semgrep / Trivy）が PASS |
-| AC-S-06 | **AuditRepository IAM 境界テスト 3 系統**: Gateway タスクロールが本体 / KDB テーブルへ Put/Get できないことを IAM Simulator API で検証（本体 § 10.3 AC-S-06 と同方針） |
+| AC-S-06 | **AuditRepository IAM 境界テスト 3 系統**: Gateway タスクロールが本体 / KDB テーブルへ Put / Get できないことを、(a) IAM Simulator API（宣言的検証）+ (b) CI 環境での実 STS AssumeRole 試行（実アクセス検証）の二段階で確認（本体 § 10.3 **AC-S-11** と同方針、3 書共通テストスイートとして実装） |
 | AC-S-07 | パブリックポートが ALB のみであることを Terraform で強制 |
 | AC-S-08 | ACL 設定変更が監査ログに 100% 記録 |
 | AC-S-09 | PII フィルタ誤検知率 < 5%（100 ケースベンチマーク） |
@@ -919,6 +928,8 @@ upstreams:
 | Walking Skeleton | 最小限のエンドツーエンド動作を最早期に確認するパターン |
 | KDB | Knowledge DB サブシステム（`docs/KNOWLEDGE_DB_REQUIREMENTS.md`） |
 | OPENCLAW プラットフォーム | 本体（`docs/OPENCLAW_PLATFORM_REQUIREMENTS.md`） |
+| 3 層 SOUL | OPENCLAW のアイデンティティ階層。Global（IT がロック）/ Position（部門管理者）/ Personal（従業員）の Markdown を、**上位が下位を上書きできない** マージ規則で結合する。マージ時、上位レイヤーは `CRITICAL IDENTITY OVERRIDE` ヘッダ付きで先頭にプリペンドされる。詳細は本体要件書 § 3.2 / 本体プラン § 2 |
+| `CRITICAL IDENTITY OVERRIDE` | 上位 SOUL レイヤーが下位を上書きできないことを示す先頭ヘッダ。本体要件書 § 3.2 FR-SOUL-05 |
 
 ---
 

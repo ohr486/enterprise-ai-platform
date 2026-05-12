@@ -459,12 +459,17 @@
 
 ### 4.9 コスト
 
-| 指標 | MVP（50 ユーザー） | 最終（500 ユーザー） |
+> 本表はサマリ。詳細内訳は § 9.3 を参照。3 書（本体 / KDB / MCP Gateway）のコスト数値は § 9.3 を一次出典とし、本表 / MCP § 4.9 / KDB § 9.3 はここから参照する。
+
+| 指標 | MVP（M1: 50 ユーザー） | 最終（M3: 500 ユーザー） |
 |---|---|---|
-| 1 ユーザーあたり月額 | < $10 | **< $5**（成功基準） |
-| 月次合計（OPENCLAW 本体） | $200〜$500 | $1,500〜$2,500 |
-| 月次合計（KDB 含む） | $300〜$700 | $1,700〜$2,900 |
-| 月次合計（KDB + MCP Gateway 含む） | $400〜$900 | $1,920〜$3,120 |
+| 1 ユーザーあたり月額 | < $10 | **< $5**（成功基準、500 × $5 = $2,500） |
+| 月次合計（OPENCLAW 本体 / § 9.3 小計） | $255〜$435 | $2,090〜$3,290 |
+| 月次合計（本体 + KDB） | $335〜$565 | $2,390〜$3,930 |
+| 月次合計（本体 + KDB + MCP Gateway） | $385〜$665 | $2,590〜$4,330 |
+| 成功基準目標（500 × $5） | $250 | **$2,500** |
+
+> 500 ユーザー時の最大想定（$4,330）は目標 $2,500 を超過しうる。Bedrock 推論コスト（最大費目、$800〜$1,500）の最適化と KDB / MCP Gateway の MVP 厳格化（既に実施）で吸収する方針。詳細は § 9.3。
 
 ---
 
@@ -783,6 +788,18 @@ s3://enterprise-ai-platform-{env}/
 | `sample/` ライセンス | AWS Samples / Apache 2.0 想定、コードコピー禁止 |
 | 本リポジトリライセンス | MIT 予定 |
 
+#### 9.4.1 GDPR 削除権 SLA と監査保持期間の対立
+
+OQ-05 で扱う論点。以下のように要求が衝突するため、コンプライアンス判断者による方針確定が必要。
+
+| 観点 | 要求 | 出典 |
+|---|---|---|
+| GDPR 削除権 SLA | 30 日以内に個人データを完全削除 | GDPR Art.17 / 候補 SLA |
+| 監査長期保管 | DynamoDB 72h + S3 Object Lock **7 年** | § 4.6 NFR-AUD-04 |
+| 両立の困難点 | 監査ログに含まれる `actor_id` / `request_id` / 操作ログ本体が個人データに該当しうる。S3 Object Lock は保持期間中の削除を物理的にブロック |
+| 想定される解 | (案 A) 監査ログ内の個人識別子を擬名化（pseudonymization）し、7 年保持と両立 / (案 B) 監査保持期間を 30 日に短縮し SOC2 / 個人情報保護法側の要請と再交渉 / (案 C) 個人データと監査メタデータを分離保管し、個人データのみ 30 日削除可能とする |
+| 整合させる先 | MCP § 4.7 NFR-CMP-05、KDB § 4.7 NFR-CMP-04（30 日 SLA を仮置き）— 3 書で SLA を一致させること |
+
 ---
 
 ## 10. 受け入れ基準（要件達成の判定）
@@ -794,7 +811,7 @@ s3://enterprise-ai-platform-{env}/
 | AC-F-01 | 従業員が Portal / Slack から AI に質問し、3 層 SOUL がマージされた応答を受信できる |
 | AC-F-02 | 部門管理者が Admin Console で Position SOUL を編集すると、5 分以内に全エージェントで反映される |
 | AC-F-03 | IT 管理者が Global SOUL を編集すると、Position SOUL が上書きできないことを CI で検証 |
-| AC-F-04 | 新入従業員作成時に Auto-Provisioning がエージェント・S3 ワークスペース・監査エントリを一括作成 |
+| AC-F-04 | 新入従業員作成時に Auto-Provisioning が (1) DynamoDB Employee/Agent エントリ (2) S3 ワークスペース (3) 監査エントリ の 3 リソースを全件作成して成功とする。途中失敗時は FR-PROV-02 の補償トランザクションが 5 分以内に整合状態（全件作成 or 全件ロールバック）に収束させる。CI で「途中で 1 リソース失敗 → 5 分以内に整合」の自動テスト必須 |
 | AC-F-05 | 異動時に Position 切替で次回コールドスタートから新 SOUL が適用される |
 | AC-F-06 | 退職時にエージェントが soft-delete され、30 日後に hard-delete される |
 | AC-F-07 | ツール許可リスト変更が 5 分以内に反映される |
@@ -832,6 +849,7 @@ s3://enterprise-ai-platform-{env}/
 | AC-S-08 | パブリックポートが ALB / CloudFront のみであることを Terraform で強制 |
 | AC-S-09 | 監査ログが 99.9%+ で書き込まれる |
 | AC-S-10 | デジタルツイン公開リンクが API Gateway throttling + WAF で保護される |
+| AC-S-11 | **AuditRepository IAM 境界テスト（3 系統）**: 本体 / MCP / KDB の各タスクロールが他系統テーブルへ Put / Get できないことを、(a) IAM Simulator API（宣言的検証）+ (b) CI 環境での実 STS AssumeRole 試行（実アクセス検証）の二段階で確認。実装プラン Phase 10 Step 3b の自然延長として CI 必須。MCP § 10.3 AC-S-06 / KDB § 10.3 AC-S-06 はこれを参照 |
 
 ### 10.4 観測性受け入れ基準
 
@@ -873,16 +891,16 @@ s3://enterprise-ai-platform-{env}/
 
 本セクションは Open Questions の確定履歴を集約する。本書の初版では、本体 OPENCLAW について以下の事項は **CLAUDE.md / 実装プラン / ADR 0001 で既に確定済み**として扱う。
 
-| 確定事項 ID | 確定日 | 決定者 | 決定内容 | 根拠 | 影響セクション |
+| 確定事項 ID | 確定日 | 決定者 | 決定内容 | 根拠（一次出典） | 影響セクション |
 |---|---|---|---|---|---|
-| FIX-01 | 既存 | プロダクトオーナー | ユーザー上限 500、単一リージョン、Slack のみ | CLAUDE.md 厳格スコープ制約 | § 2.3, § 3.9, § 4.7 |
-| FIX-02 | 既存 | プロダクトオーナー | OpenClaw `2026.3.24` 固定、フォーク・パッチ禁止 | CLAUDE.md ゼロ侵襲 | § 3.6 FR-AC-01, FR-AC-09 |
-| FIX-03 | 既存 | アーキテクト | バックエンドサービスを Python 3.12 に統一 | [ADR 0001](./adr/0001-python-unified-backend.md) | § 5.4 |
-| FIX-04 | 既存 | アーキテクト | ランタイムは AgentCore（既定）+ ECS Fargate（Always-On）のハイブリッド | 実装プラン § 2.1 | § 3.7, § 5.1 |
-| FIX-05 | 既存 | アーキテクト | 監査一次系（Firehose → S3 Object Lock → Athena）を Phase 1 から構築 | 実装プラン Phase 1 Step 5 | § 3.14 FR-AUD-02 |
-| FIX-06 | 既存 | セキュリティ | L1 SOUL は Trust Boundary ではない（L3 以降のみ保証範囲） | 実装プラン § 2.3 | § 4.4 |
-| FIX-07 | 既存 | アーキテクト | Service Discovery は AWS Cloud Map（DNS TTL 10 秒）、SSM での IP 直接保持を廃止 | 実装プラン Phase 5 Step 3 | § 3.7 FR-RT-04 |
-| FIX-08 | 既存 | アーキテクト | Phase 6 を 6a（API 層）/ 6b（UI 層）に分割、MCP Gateway Phase 4 は 6a Step 3 完了で着手可 | 実装プラン § 6 | § 7.1, § 8.2 |
+| FIX-01 | 2026-05-13 以前 | プロダクトオーナー | ユーザー上限 500、単一リージョン、Slack のみ | [CLAUDE.md](../CLAUDE.md) §「厳格なスコープ制約」 + [OPENCLAW_PLATFORM_PLAN.md](./OPENCLAW_PLATFORM_PLAN.md) § 1.2 / § 1.3 | § 2.3, § 3.9, § 4.7 |
+| FIX-02 | 2026-05-13 以前 | プロダクトオーナー | OpenClaw `2026.3.24` 固定、フォーク・パッチ禁止 | [CLAUDE.md](../CLAUDE.md) §「OpenClaw へのゼロ侵襲」 + 実装プラン Phase 3 Step 1 | § 3.6 FR-AC-01, FR-AC-09 |
+| FIX-03 | 2026-05-13 以前 | アーキテクト | バックエンドサービスを Python 3.12 に統一 | [ADR 0001](./adr/0001-python-unified-backend.md) | § 5.4 |
+| FIX-04 | 2026-05-13 以前 | アーキテクト | ランタイムは AgentCore（既定）+ ECS Fargate（Always-On）のハイブリッド | [OPENCLAW_PLATFORM_PLAN.md](./OPENCLAW_PLATFORM_PLAN.md) § 2.1 Data Plane + Phase 4 / Phase 5 | § 3.7, § 5.1 |
+| FIX-05 | 2026-05-13 以前 | アーキテクト | 監査一次系（Firehose → S3 Object Lock → Athena）を Phase 1 から構築 | [OPENCLAW_PLATFORM_PLAN.md](./OPENCLAW_PLATFORM_PLAN.md) Phase 1 Step 5 | § 3.14 FR-AUD-02 |
+| FIX-06 | 2026-05-13 以前 | セキュリティ | L1 SOUL は Trust Boundary ではない（L3 以降のみ保証範囲） | [OPENCLAW_PLATFORM_PLAN.md](./OPENCLAW_PLATFORM_PLAN.md) § 2.3 多層防御表 + 同節「重要」注記 | § 4.4 |
+| FIX-07 | 2026-05-13 以前 | アーキテクト | Service Discovery は AWS Cloud Map（DNS TTL 10 秒）、SSM での IP 直接保持を廃止 | [OPENCLAW_PLATFORM_PLAN.md](./OPENCLAW_PLATFORM_PLAN.md) Phase 5 Step 3 / Step 4 | § 3.7 FR-RT-04 |
+| FIX-08 | 2026-05-13 以前 | アーキテクト | Phase 6 を 6a（API 層）/ 6b（UI 層）に分割、MCP Gateway Phase 4 は 6a Step 3 完了で着手可 | [OPENCLAW_PLATFORM_PLAN.md](./OPENCLAW_PLATFORM_PLAN.md) § 6 冒頭注記 + § 6 工数表 | § 7.1, § 8.2 |
 
 ---
 

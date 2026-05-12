@@ -5,7 +5,9 @@
 - **最終更新**: 2026-05-12（OQ-03 / 05 / 06 / 07 / 15 確定反映、その後 OQ-06 を「統合 → 共存」に再修正）
 - **対象**: enterprise-ai-platform / MCP Gateway 双方から参照される汎用ナレッジ DB（RAG 系）サブシステム
 - **関連ドキュメント**:
+  - [OPENCLAW_PLATFORM_REQUIREMENTS.md](./OPENCLAW_PLATFORM_REQUIREMENTS.md)（本体要件定義 — IAM 境界テスト AC-S-11、3 層 SOUL、4 ティアの詳細はこちら）
   - [OPENCLAW_PLATFORM_PLAN.md](./OPENCLAW_PLATFORM_PLAN.md)
+  - [MCP_GATEWAY_REQUIREMENTS.md](./MCP_GATEWAY_REQUIREMENTS.md)（MCP Gateway 要件定義）
   - [MCP_GATEWAY_PLAN.md](./MCP_GATEWAY_PLAN.md)
   - [ADR 0001: Python 統一バックエンド](./adr/0001-python-unified-backend.md)
   - 起票予定: ADR 0002 / 0003 / 0004（§ 11.1 参照）
@@ -735,7 +737,7 @@ MCP Phase 2/3 ─→ ─────────────────┘
 | AC-S-03 | 全 KB に SSE-KMS が適用されている（Terraform で強制） |
 | AC-S-04 | IAM Access Analyzer で過剰権限ゼロ |
 | AC-S-05 | 監査ログが全クエリで 99.9%+ の成功率で書き込まれる |
-| AC-S-06 | **AuditRepository IAM 境界テスト（3 系統に拡張）**: IAM Simulator API で以下を検証 — KDB タスクロールが本体 / MCP テーブルへ Put/Get できない / 本体タスクロールが KDB / MCP テーブルへ Put/Get できない / MCP タスクロールが本体 / KDB テーブルへ Put/Get できない（本体 Phase 10 Step 3b の自然延長） |
+| AC-S-06 | **AuditRepository IAM 境界テスト（3 系統に拡張）**: 以下 3 種の越境アクセスが全て拒否されることを、(a) IAM Simulator API（宣言的検証）+ (b) CI 環境での実 STS AssumeRole 試行（実アクセス検証）の二段階で確認 — KDB タスクロールが本体 / MCP テーブルへ Put / Get できない、本体タスクロールが KDB / MCP テーブルへ Put / Get できない、MCP タスクロールが本体 / KDB テーブルへ Put / Get できない（本体 § 10.3 **AC-S-11** および実装プラン Phase 10 Step 3b の自然延長、3 書共通テストスイートとして実装） |
 
 ### 10.4 観測性受け入れ基準
 
@@ -817,7 +819,8 @@ MCP Phase 2/3 ─→ ─────────────────┘
 | Reranking | 検索結果の二次並べ替え。クロスエンコーダ等で精度を上げる（KDB は MVP 不採用） |
 | HyDE | Hypothetical Document Embeddings。仮の回答を生成して検索する手法 |
 | ACL | Access Control List |
-| 3 層 SOUL | OPENCLAW のアイデンティティ階層（Global / Position / Personal） |
+| 3 層 SOUL | OPENCLAW のアイデンティティ階層。Global（IT がロック）/ Position（部門管理者）/ Personal（従業員）の Markdown を、**上位が下位を上書きできない** マージ規則で結合する。マージ時、上位レイヤーは `CRITICAL IDENTITY OVERRIDE` ヘッダ付きで先頭にプリペンドされる。詳細は本体要件書 § 3.2 / 本体プラン § 2 |
+| `CRITICAL IDENTITY OVERRIDE` | 上位 SOUL レイヤーが下位を上書きできないことを示す先頭ヘッダ。本体要件書 § 3.2 FR-SOUL-05 |
 | 4 ティアランタイム | Standard / Restricted / Engineering / Executive |
 | 5 層多層防御 | L1 SOUL ルール / L2 ツール許可 / L3 IAM / L4 コンピュート分離 / L5 Guardrails |
 | MCP | Model Context Protocol |
