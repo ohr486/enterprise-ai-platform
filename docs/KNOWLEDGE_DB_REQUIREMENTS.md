@@ -2,7 +2,7 @@
 
 - **ステータス**: Final Draft (要承認)
 - **起票日**: 2026-05-12
-- **最終更新**: 2026-05-12（OQ-03 / 05 / 06 / 07 / 15 確定反映、その後 OQ-06 を「統合 → 共存」に再修正）
+- **最終更新**: 2026-05-13（PR #2 レビュー反映: AC-S-06 を 3 系統 IAM 境界テストとして再定義し本体 § 10.3 AC-S-11 と整合、§ 0.3 関連ドキュメントに本体 / MCP 要件書を追加、§ 10 冒頭に AC ID 独立性注記を追加、§ 12 用語集に 3 層 SOUL / `CRITICAL IDENTITY OVERRIDE` の詳細定義を追加）<br>2026-05-12（OQ-03 / 05 / 06 / 07 / 15 確定反映、その後 OQ-06 を「統合 → 共存」に再修正）
 - **対象**: enterprise-ai-platform / MCP Gateway 双方から参照される汎用ナレッジ DB（RAG 系）サブシステム
 - **関連ドキュメント**:
   - [OPENCLAW_PLATFORM_REQUIREMENTS.md](./OPENCLAW_PLATFORM_REQUIREMENTS.md)（本体要件定義 — IAM 境界テスト AC-S-11、3 層 SOUL、4 ティアの詳細はこちら）
