@@ -4,20 +4,28 @@
 
 ## リポジトリの状態
 
-**本リポジトリは実装前の設計フェーズにあります。** 唯一の成果物は `docs/OPENCLAW_PLATFORM_PLAN.md` および `docs/MCP_GATEWAY_PLAN.md` の実装プランです。アプリケーションコード・テスト・インフラはまだ何も書かれていないため、ビルド・lint・テストの実行コマンドは存在しません。
+**本リポジトリは実装前の設計フェーズにあります。** 成果物は `docs/` 配下の **要件定義書（REQUIREMENTS）** と **実装プラン（PLAN）** のみです。アプリケーションコード・テスト・インフラはまだ何も書かれていないため、ビルド・lint・テストの実行コマンドは存在しません。
 
 コードを追加する際は、選定した言語・ツールに応じた実コマンドを本ファイルに追記してください。
 
-## Source of Truth: 実装プラン
+## Source of Truth: 要件定義書と実装プラン
 
-`docs/OPENCLAW_PLATFORM_PLAN.md` は権威ある設計ドキュメントです（日本語で記述されています）。アーキテクチャ・スコープ・技術選定に関わる変更を提案する前に必ず読んでください。プランは以下を定義しています:
+設計ドキュメントは **要件定義書（What / Why / 制約 / 受け入れ基準）** と **実装プラン（How / フェーズ / コード / Terraform）** に分離されています。アーキテクチャ・スコープ・技術選定に関わる変更を提案する前に、該当サブシステムの両ドキュメントを必ず読んでください（日本語で記述されています）。
+
+| サブシステム | 要件定義書（What/Why） | 実装プラン（How） |
+|---|---|---|
+| OPENCLAW 本体 | `docs/OPENCLAW_PLATFORM_REQUIREMENTS.md` | `docs/OPENCLAW_PLATFORM_PLAN.md`（10 フェーズ、約 10.25 人月） |
+| MCP Gateway | `docs/MCP_GATEWAY_REQUIREMENTS.md` | `docs/MCP_GATEWAY_PLAN.md`（8 フェーズ、約 3.3 人月） |
+| Knowledge DB (KDB) | `docs/KNOWLEDGE_DB_REQUIREMENTS.md` | 未着手（要件定義のみ、実装プラン起票予定） |
+
+本体プランは以下を定義しています:
 
 - 10 の実装フェーズ（基盤インフラ → ゲートウェイ → Agent Container → AgentCore → Always-On → 管理コンソール/ポータル → Slack → ガバナンス → デジタルツイン → テスト/ドキュメント）
 - ターゲット規模、選定技術スタック、モノレポ構成、AWS サービスマップ、マイルストーンロードマップ（M1〜M4）
 
-MCP Gateway サブシステムの設計は `docs/MCP_GATEWAY_PLAN.md` に分離されています（8 フェーズ、約 3.3 人月）。本体プランと共通インフラ・認証・監査基盤を共有し、独立サブシステムとして配置されます。
+MCP Gateway と Knowledge DB (KDB) は独立サブシステムとして、本体と共通インフラ（VPC / Cognito / 監査基盤）を共有しつつ配置されます。
 
-要望がプランと矛盾する場合は、黙って逸脱せずユーザーに矛盾を提示してください。
+要望がプランと矛盾する場合は、黙って逸脱せずユーザーに矛盾を提示してください。要件レベルの変更（What / Why / 制約）が必要なら REQUIREMENTS を、実装レベルの変更（How / フェーズ）が必要なら PLAN を更新してください。
 
 ## 厳格なスコープ制約
 
@@ -43,9 +51,9 @@ Gateway Plane (Tenant Router + Bedrock H2 Proxy + MCP Gateway — 3 ティアル
     ↓
 Data Plane (Bedrock AgentCore microVM もしくは ECS Fargate Always-On)
     ↓
-State (DynamoDB シングルテーブル + S3 ワークスペース/KB/監査 + SSM/Secrets)
+State (DynamoDB 本体テーブル + KDB 専用テーブル + S3 ワークスペース/KB/監査 + SSM/Secrets)
     ↓
-AI (Bedrock + Guardrails + Knowledge Bases)
+AI (Bedrock + Guardrails) + KDB (Bedrock Knowledge Bases ストレージ)
 ```
 
 コンポーネントを横断する 3 つの load-bearing なコンセプトがあります:
@@ -58,20 +66,32 @@ AI (Bedrock + Guardrails + Knowledge Bases)
 
 ## MCP Gateway サブシステム
 
-`docs/MCP_GATEWAY_PLAN.md` で定義される独立サブシステム。単一エンドポイントで複数の上流 MCP サーバー（GitHub / Jira / Slack / 社内 DB など）へプロキシするアグリゲーター・ゲートウェイ。`{upstreamId}__{toolName}` 形式で名前空間化し、ユーザー × 上流 × ツールの 3 軸 ACL で認可を行います。
+`docs/MCP_GATEWAY_REQUIREMENTS.md` および `docs/MCP_GATEWAY_PLAN.md` で定義される独立サブシステム。単一エンドポイントで複数の上流 MCP サーバー（GitHub / Jira / Slack / 社内 DB など）へプロキシするアグリゲーター・ゲートウェイ。`{upstreamId}__{toolName}` 形式で名前空間化し、ユーザー × 上流 × ツールの 3 軸 ACL で認可を行います。
 
 本体プランとは VPC / DynamoDB / S3 / Secrets Manager / Cognito / Admin Console を共有し、ECS タスク・ALB ターゲットグループのみ分離されます。
+
+## Knowledge DB (KDB) サブシステム
+
+`docs/KNOWLEDGE_DB_REQUIREMENTS.md` で定義される横断サブシステム。本体（OPENCLAW Agent Container）と MCP Gateway クライアント（Claude Desktop / Code / 自社エージェント）の **双方から** 利用可能な汎用 RAG / ナレッジ検索基盤です。Bedrock Knowledge Bases をストレージ層、Titan v2 を埋め込みモデル（MVP 固定）として採用予定。
+
+- 専用 DynamoDB テーブル `enterprise-ai-platform-kdb-{env}` を新設し、本体 / MCP Gateway テーブルから **物理分離**（I/O 競合 / PITR コスト結合の回避）
+- 本体 Phase 9 Step 5 の `directory_kb.py`（組織ディレクトリ Markdown 自動注入）とは **共存**（統合せず両者並存）
+- 実装プラン（`docs/KNOWLEDGE_DB_PLAN.md` ※命名規則上の予定、原典未確定）は未起票。実装着手前に起票が必要
+- 起票予定 ADR: 0002（Bedrock KB 採用）/ 0003（独立サービス配置）/ 0004（DynamoDB テーブル分離）
 
 ## リポジトリ構成
 
 ```
 .
 ├── docs/
-│   ├── OPENCLAW_PLATFORM_PLAN.md  # OpenClaw 本体設計の Source of Truth（日本語）
-│   ├── MCP_GATEWAY_PLAN.md        # MCP Gateway サブシステム設計（日本語）
-│   └── adr/                       # Architecture Decision Records
+│   ├── OPENCLAW_PLATFORM_REQUIREMENTS.md  # 本体要件定義（What/Why/制約/AC）
+│   ├── OPENCLAW_PLATFORM_PLAN.md          # 本体実装プラン（10 フェーズ）
+│   ├── MCP_GATEWAY_REQUIREMENTS.md        # MCP Gateway 要件定義
+│   ├── MCP_GATEWAY_PLAN.md                # MCP Gateway 実装プラン（8 フェーズ）
+│   ├── KNOWLEDGE_DB_REQUIREMENTS.md       # Knowledge DB 要件定義（実装プラン未起票）
+│   └── adr/                               # Architecture Decision Records
 │       └── 0001-python-unified-backend.md
-├── README.md                    # スタブ
+├── README.md                    # 概要・設計ドキュメント目次
 ├── CLAUDE.md                    # 本ファイル
 ├── .gitignore                   # sample/ と ecc/ シンボリックリンクを除外
 ├── sample/   → シンボリックリンク（gitignored）  AWS Samples リファレンス、コピー禁止
@@ -83,6 +103,7 @@ AI (Bedrock + Guardrails + Knowledge Bases)
 ## プラン運用上の注意
 
 - MVP は Phase 1〜4 + Phase 6a（API 層の最小実装、最小限の Portal Chat UI のみ）。本格的な Admin Console / Portal UI（Phase 6b）は M2 以降。後続フェーズは前フェーズの完了に依存します（依存関係マップは `docs/OPENCLAW_PLATFORM_PLAN.md` § 4、横断依存も同節を参照）。MCP Gateway Phase 4 は本体 Phase 6a Step 3 完了で着手可能。
-- 重要な設計判断は `docs/adr/` の Architecture Decision Records として記録します（例: [ADR 0001: Python 統一バックエンド](docs/adr/0001-python-unified-backend.md)）。設計変更を提案する際は該当 ADR を更新するか、新規 ADR を起こしてください。
+- 要件と実装の二層構成: 要件（What / Why / 制約 / 受け入れ基準）は `*_REQUIREMENTS.md`、実装（How / フェーズ / コード / Terraform）は `*_PLAN.md` に分離されています。スコープ・制約・AC の変更は REQUIREMENTS で、フェーズ分割・実装手段の変更は PLAN で行ってください。
+- 重要な設計判断は `docs/adr/` の Architecture Decision Records として記録します（例: [ADR 0001: Python 統一バックエンド](docs/adr/0001-python-unified-backend.md)）。KDB 関連で ADR 0002 / 0003 / 0004 の起票が予定されています（`docs/KNOWLEDGE_DB_REQUIREMENTS.md` § 11.1）。設計変更を提案する際は該当 ADR を更新するか、新規 ADR を起こしてください。
 - プランは意図的に 2 回スコープ縮小されています: (1) 5,000 → 500 ユーザー、(2) 5 IM プラットフォーム → Slack のみ。さらなるスコープ拡大要望は、ルーチンな進化ではなく、改めてユーザー確認が必要な事項として扱ってください。
 - ユーザーの母語は日本語です。設計ドキュメントの議論・コメント・コミットメッセージなどは日本語を優先してください。
