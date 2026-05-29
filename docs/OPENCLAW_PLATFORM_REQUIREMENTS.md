@@ -304,8 +304,8 @@ OpenClaw Platform 要件定義書
 
 | 要件 ID | 要件 | 決定 |
 |---|---|---|
-| FR-PROV-01 | 従業員作成時にエージェント・1:1 バインディング・S3 ワークスペース・監査エントリを一括作成 | 決定 |
-| FR-PROV-02 | 部分失敗時の補償トランザクション（DynamoDB Streams ベース） | 決定 |
+| FR-PROV-01 | 従業員作成時に (1) DynamoDB Employee エントリ (2) DynamoDB Agent + 1:1 バインディングエントリ (3) S3 ワークスペース (4) DynamoDB 監査エントリ の 4 リソースを一括作成 | 決定 |
+| FR-PROV-02 | 部分失敗時の補償トランザクション（DynamoDB Streams ベース、収束 SLA: 5 分以内、CI で自動検証） | 決定 |
 | FR-PROV-03 | プロビジョニング完了通知（管理者へメール / Slack） | 決定 |
 | FR-PROV-04 | バッチプロビジョニング（CSV インポート） | 決定 |
 
@@ -335,6 +335,7 @@ OpenClaw Platform 要件定義書
 | Bedrock H2 Proxy 透過オーバーヘッド p95 | < 50ms | 100 リクエスト実測 |
 | Tenant Router 解決 p95 | < 50ms | 同上 |
 | Always-On 切替後の応答 p95 | < 2s | 同上 |
+| Always-On Cloud Map register p95 | < 30s | 切替トリガから実測 |
 | Always-On Cloud Map register → DNS 安定 p95 | < 45s | 切替トリガから実測 |
 | Always-On deregister → IP 不返却 p95 | < 20s | 同上 |
 | 監査検索（直近 24h、単一テナント） p95 | < 2s | Admin Console 実測 |
@@ -446,7 +447,9 @@ OpenClaw Platform 要件定義書
 |---|---|---|
 | 1 ユーザーあたり月額 | < $10 | **< $5**（成功基準、500 × $5 = $2,500） |
 | 月次合計 | $255〜$435 | $2,090〜$3,290 |
-| 成功基準目標（500 × $5） | $250 | **$2,500** |
+| 成功基準目標 | — | **$2,500**（500 × $5、M3 のみ） |
+
+> 500 ユーザー時の上振れ（$3,290）は目標 $2,500 を超える可能性がある。詳細リスクと吸収方針は § 9.3 を参照。
 
 ---
 
@@ -588,7 +591,8 @@ s3://enterprise-ai-platform-{env}/
 |---|---|---|
 | Bedrock Foundation Models | Bedrock H2 Proxy 経由（SigV4 + ストリーミング） | Nova / Claude などのモデル選定は実装プランで確定 |
 | Bedrock Guardrails | Bedrock H2 Proxy ミドルウェアで `apply_guardrail` を呼び出し | 本格稼働は後フェーズ、初期は最小ルールセット |
-| Bedrock Knowledge Bases | 本書スコープ外（本体エージェントは直接呼び出さない） | — |
+
+> Bedrock Knowledge Bases は本書スコープ外（本体エージェントは直接呼び出さない）。
 
 ### 7.2 外部 SaaS / 認証連携
 
@@ -628,7 +632,7 @@ s3://enterprise-ai-platform-{env}/
 | **MVP (M1)** | 組織管理 / 3 層 SOUL / Standard ティア / Cognito 認証 / Portal Chat 最小 / 監査一次系 |
 | **M2** | + 常時稼働（Always-On）/ Slack 統合 / Engineering + Executive ティア |
 | **M3** | + フルガバナンス / デジタルツイン / Azure AD / 500 ユーザー対応 |
-| **M4** | + SOC2 準拠基盤 / 運用安定化 |
+| **M4** | + SOC2 準拠基盤（NFR-CMP-04 の認証取得スコープ確定後）/ 運用安定化 |
 
 ---
 
@@ -675,9 +679,9 @@ s3://enterprise-ai-platform-{env}/
 | SSM / Secrets Manager / KMS | $5 | $20 |
 | Firehose | $5 | $30 |
 | **月次合計** | **$255〜$435** | **$2,090〜$3,290** |
-| **目標（$5 / ユーザー / 月）** | $250 | **$2,500** |
+| **目標（$5 / ユーザー / 月、M3 のみ適用）** | — | **$2,500** |
 
-> 500 ユーザー時の上振れ（$3,290）が目標 $2,500 を超える可能性がある。Bedrock 推論コスト（最大費目、$800〜$1,500）の最適化が一次的な吸収手段。
+> 500 ユーザー時の上振れ（$3,290）が目標 $2,500 を超える可能性がある。Bedrock 推論コスト（最大費目、$800〜$1,500）の最適化が一次的な吸収手段。MVP 規模（50 ユーザー）では単価が高くなることは合理的範囲とし、$5/ユーザー目標は M3 達成時の成功基準とする。
 
 ### 9.4 法的・データ越境
 

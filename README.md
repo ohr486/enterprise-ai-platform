@@ -27,6 +27,23 @@
 - [OpenClaw OSS](https://github.com/openclaw/openclaw) — 本プラットフォームが内包する AI エージェントランタイム。`openclaw/` シンボリックリンクで参照可能（フォーク・パッチ禁止、ソース読解のみ）。
 - AWS Samples: OpenClaw on AWS with Bedrock — 設計参考のサンプル実装。`sample/` シンボリックリンクで参照可能（コードコピー禁止）。
 
+## ローカルセットアップ
+
+リポジトリ直下の `sample/` / `openclaw/` / `ecc/` は `.gitignore` 除外のシンボリックリンクで、いずれもクローン直後には存在しません。各リポジトリは本リポジトリと **同じ親ディレクトリ** に配置されていることを前提とし、以下のコマンドでリンクを作成します（**任意・参照用途のみ**、本プラットフォームのビルドには必須ではありません）。
+
+```bash
+# 親ディレクトリに以下のリポジトリがチェックアウト済みであること:
+#   ../openclaw                              （https://github.com/openclaw/openclaw）
+#   ../sample-OpenClaw-on-AWS-with-Bedrock   （AWS Samples）
+#   ../everything-claude-code                （ローカル Claude plugin）
+
+ln -s ../openclaw openclaw
+ln -s ../sample-OpenClaw-on-AWS-with-Bedrock sample
+ln -s ../everything-claude-code ecc
+```
+
+リンク先リポジトリが存在しない場合はリンク作成をスキップしても本プラットフォームの作業に支障はありません。
+
 ## 開発状況
 
 要件定義フェーズ。実装プラン・ADR・実装コードはこれからユーザーと方針を合意した上で進める。
