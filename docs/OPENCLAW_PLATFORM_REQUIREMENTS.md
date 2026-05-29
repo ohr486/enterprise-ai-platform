@@ -26,6 +26,7 @@ OpenClaw Platform 要件定義書
 
 ### 0.3 関連ドキュメント
 
+- OpenClaw OSS 本体ソース（参照のみ、フォーク・パッチ禁止）: `openclaw/` シンボリックリンク先 → [github.com/openclaw/openclaw](https://github.com/openclaw/openclaw)
 - 参考実装（コピー禁止・設計参考のみ）: `sample/` シンボリックリンク先（AWS Samples）
 - リポジトリ運用指針: [`CLAUDE.md`](../CLAUDE.md)
 

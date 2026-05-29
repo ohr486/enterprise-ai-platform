@@ -17,9 +17,15 @@
 ├── README.md                    # 本ファイル
 ├── CLAUDE.md                    # Claude Code 向けガイダンス
 ├── .gitignore
-├── sample/   → シンボリックリンク（gitignored、AWS Samples リファレンス、コピー禁止）
-└── ecc/      → シンボリックリンク（gitignored、Claude plugin）
+├── sample/    → シンボリックリンク（gitignored、AWS Samples リファレンス、コピー禁止）
+├── openclaw/  → シンボリックリンク（gitignored、OpenClaw OSS 本体ソース、参照のみ）
+└── ecc/       → シンボリックリンク（gitignored、Claude plugin）
 ```
+
+## 参考リポジトリ
+
+- [OpenClaw OSS](https://github.com/openclaw/openclaw) — 本プラットフォームが内包する AI エージェントランタイム。`openclaw/` シンボリックリンクで参照可能（フォーク・パッチ禁止、ソース読解のみ）。
+- AWS Samples: OpenClaw on AWS with Bedrock — 設計参考のサンプル実装。`sample/` シンボリックリンクで参照可能（コードコピー禁止）。
 
 ## 開発状況
 
